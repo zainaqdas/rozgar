@@ -1,0 +1,67 @@
+name: rozgar
+description: "Rozgar - Local Services Marketplace Pakistan"
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.12.2
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+  intl: ^0.20.2
+  cupertino_icons: ^1.0.8
+
+  # State Management
+  # State Management (using ChangeNotifier + ListenableBuilder)
+  provider: ^6.1.2
+
+  # Backend
+  supabase_flutter: ^2.8.4
+
+  # Maps & Location
+  google_maps_flutter: ^2.12.0
+  flutter_map: ^7.0.2
+  latlong2: ^0.9.1
+  geolocator: ^13.0.2
+  geocoding: ^3.0.0
+
+  # UI
+  cached_network_image: ^3.4.1
+  flutter_animate: ^4.5.2
+
+  # Utilities
+  uuid: ^4.5.1
+  http: ^1.3.0
+  shared_preferences: ^2.3.5
+  flutter_map_cancellable_tile_provider: ^3.0.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
+
+  # Plus Jakarta Sans - Primary UI font (English)
+  # Noto Nastaliq Urdu - Urdu language font (RTL, calligraphic)
+  fonts:
+    - family: PlusJakartaSans
+      fonts:
+        - asset: assets/fonts/PlusJakartaSans-Regular.ttf
+        - asset: assets/fonts/PlusJakartaSans-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/PlusJakartaSans-SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/PlusJakartaSans-Bold.ttf
+          weight: 700
+        - asset: assets/fonts/PlusJakartaSans-ExtraBold.ttf
+          weight: 800
+
+    - family: NotoNastaliqUrdu
+      fonts:
+        - asset: assets/fonts/NotoNastaliqUrdu-Variable.ttf
+          # Variable font - supports all weights via FontWeight
