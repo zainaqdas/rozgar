@@ -20,6 +20,7 @@ import 'screens/settings/settings_screen.dart';
 import 'screens/rating/rating_modal.dart';
 import 'widgets/header.dart';
 import 'widgets/bottom_nav.dart';
+import 'theme/app_theme.dart';
 import 'app.dart' show AppView;
 
 final routerProvider = Provider<GoRouter>((ref) {
@@ -269,6 +270,26 @@ class AppShell extends StatelessWidget {
     final bottomNavTabs = appState.activeProfileType == ProfileType.employer
         ? _employerTabs
         : _workerTabs;
+
+    // Surface operation errors to the user
+    final error = appState.lastOperationError;
+    if (error != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(error),
+            backgroundColor: AppColors.rose500,
+            behavior: SnackBarBehavior.floating,
+            action: SnackBarAction(
+              label: 'Dismiss',
+              textColor: Colors.white,
+              onPressed: () {},
+            ),
+          ),
+        );
+        appState.clearOperationError();
+      });
+    }
 
     return Scaffold(
       body: Column(
