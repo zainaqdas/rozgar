@@ -7,6 +7,7 @@ import 'chat_provider.dart';
 import 'notification_provider.dart';
 import 'worker_provider.dart';
 import 'settings_provider.dart';
+import 'coordinator.dart';
 
 final appStateProvider = ChangeNotifierProvider<AppState>((ref) {
   return AppState();
@@ -38,4 +39,16 @@ final workerProvider = ChangeNotifierProvider<WorkerNotifier>((ref) {
 
 final settingsProvider = ChangeNotifierProvider<SettingsNotifier>((ref) {
   return SettingsNotifier();
+});
+
+final coordinatorProvider = ChangeNotifierProvider<Coordinator>((ref) {
+  return Coordinator(
+    auth: ref.read(authProvider),
+    profile: ref.read(profileProvider),
+    jobs: ref.read(jobProvider),
+    chat: ref.read(chatProvider),
+    notifications: ref.read(notificationProvider),
+    workers: ref.read(workerProvider),
+    settings: ref.read(settingsProvider),
+  );
 });
