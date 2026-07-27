@@ -4,6 +4,8 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'providers/providers.dart';
+import 'providers/app_state.dart';
+import 'models/profile.dart';
 import 'theme/app_theme.dart';
 import 'utils/translations.dart';
 import 'services/supabase_config.dart';
@@ -68,13 +70,31 @@ class _RozgarAppState extends ConsumerState<RozgarApp> {
 
   Future<void> _initialize() async {
     try {
-      await ref.read(appStateProvider.notifier).initialize();
+      final appState = ref.read(appStateProvider.notifier);
+      await appState.initialize();
+      _syncProviders(appState);
     } catch (e) {
       debugPrint('App initialization failed: $e');
     }
     if (mounted) {
       setState(() => _isLoading = false);
     }
+  }
+
+  /// Bridge: copy AppState data into domain providers during migration.
+  /// Removed in Phase 3C when AppState is deleted.
+  void _syncProviders(AppState appState) {
+    final profiles = <Profile>[];
+    if (appState.employerProfile != null) profiles.add(appState.employerProfile!);
+    if (appState.workerProfile != null) profiles.add(appState.workerProfile!);
+    ref.read(profileProvider.notifier).setProfiles(profiles, appState.workerDetails);
+    ref.read(jobProvider.notifier).setJobs(appState.jobs);
+    ref.read(jobProvider.notifier).setApplications(appState.applications);
+    ref.read(chatProvider.notifier).setConversations(appState.conversations);
+    ref.read(chatProvider.notifier).setMessages(appState.messages);
+    ref.read(notificationProvider.notifier).setNotifications(appState.notifications);
+    ref.read(workerProvider.notifier).setWorkers(appState.allWorkers);
+    ref.read(settingsProvider.notifier).setLanguage(appState.language);
   }
 
   @override
