@@ -200,6 +200,7 @@ class AppState extends ChangeNotifier {
   /// Subscribe to realtime messages for a single conversation.
   /// Call this when a new conversation is created at runtime.
   void _subscribeToConversation(String conversationId) {
+    if (!_isSupabaseAvailable) return;
     // Avoid duplicate subscriptions
     if (!_subscribedConversationIds.add(conversationId)) return;
     final channel = _supabase.subscribeToMessages(
