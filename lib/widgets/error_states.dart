@@ -1,18 +1,21 @@
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
+import '../utils/translations.dart';
 
 /// Full-width error state with icon, message, and optional retry button.
 class ErrorState extends StatelessWidget {
-  final String title;
-  final String message;
+  final String? title;
+  final String? message;
   final VoidCallback? onRetry;
   final IconData icon;
   final Color iconColor;
+  final LanguageOption lang;
 
   const ErrorState({
     super.key,
-    this.title = 'Something went wrong',
-    this.message = 'Please try again later.',
+    this.lang = LanguageOption.en,
+    this.title,
+    this.message,
     this.onRetry,
     this.icon = Icons.warning_amber_rounded,
     this.iconColor = AppColors.rose500,
@@ -20,6 +23,8 @@ class ErrorState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final displayTitle = title ?? AppTranslations.t('somethingWentWrong', lang);
+    final displayMessage = message ?? AppTranslations.t('tryAgainLater', lang);
     return Center(
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 40),
@@ -36,7 +41,7 @@ class ErrorState extends StatelessWidget {
             ),
             const SizedBox(height: 20),
             Text(
-              title,
+              displayTitle,
               style: const TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.w800,
@@ -46,7 +51,7 @@ class ErrorState extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             Text(
-              message,
+              displayMessage,
               style: const TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.w500,
@@ -73,14 +78,14 @@ class ErrorState extends StatelessWidget {
                       ),
                     ],
                   ),
-                  child: const Row(
+                  child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.refresh, size: 16, color: Colors.white),
-                      SizedBox(width: 8),
+                      const Icon(Icons.refresh, size: 16, color: Colors.white),
+                      const SizedBox(width: 8),
                       Text(
-                        'Try Again',
-                        style: TextStyle(
+                        AppTranslations.t('tryAgain', lang),
+                        style: const TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.w800,
                           color: Colors.white,
@@ -101,17 +106,19 @@ class ErrorState extends StatelessWidget {
 /// Empty state with icon, message, and optional action.
 class EmptyState extends StatelessWidget {
   final IconData icon;
-  final String title;
-  final String message;
+  final String? title;
+  final String? message;
   final String? actionLabel;
   final VoidCallback? onAction;
   final Color iconColor;
+  final LanguageOption lang;
 
   const EmptyState({
     super.key,
+    this.lang = LanguageOption.en,
     this.icon = Icons.inbox_outlined,
-    this.title = 'Nothing here yet',
-    this.message = 'Check back later for updates.',
+    this.title,
+    this.message,
     this.actionLabel,
     this.onAction,
     this.iconColor = AppColors.slate400,
@@ -119,6 +126,8 @@ class EmptyState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final displayTitle = title ?? AppTranslations.t('nothingHereYet', lang);
+    final displayMessage = message ?? AppTranslations.t('checkBackLater', lang);
     return Center(
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 48),
@@ -135,7 +144,7 @@ class EmptyState extends StatelessWidget {
             ),
             const SizedBox(height: 20),
             Text(
-              title,
+              displayTitle,
               style: const TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.w800,
@@ -145,7 +154,7 @@ class EmptyState extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             Text(
-              message,
+              displayMessage,
               style: const TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.w500,
@@ -185,7 +194,10 @@ class EmptyState extends StatelessWidget {
 
 /// A banner that shows when there's no network connectivity.
 class OfflineBanner extends StatelessWidget {
-  const OfflineBanner({super.key});
+  final LanguageOption lang;
+  final VoidCallback? onDismiss;
+
+  const OfflineBanner({super.key, this.lang = LanguageOption.en, this.onDismiss});
 
   @override
   Widget build(BuildContext context) {
@@ -193,19 +205,26 @@ class OfflineBanner extends StatelessWidget {
       width: double.maxFinite,
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       color: AppColors.rose500,
-      child: const Row(
+      child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.wifi_off, size: 14, color: Colors.white),
-          SizedBox(width: 6),
+          const Icon(Icons.wifi_off, size: 14, color: Colors.white),
+          const SizedBox(width: 6),
           Text(
-            'You are offline. Some features may be limited.',
-            style: TextStyle(
+            AppTranslations.t('offlineMessage', lang),
+            style: const TextStyle(
               fontSize: 10,
               fontWeight: FontWeight.w700,
               color: Colors.white,
             ),
           ),
+          if (onDismiss != null) ...[
+            const SizedBox(width: 8),
+            GestureDetector(
+              onTap: onDismiss,
+              child: const Icon(Icons.close, size: 12, color: Colors.white),
+            ),
+          ],
         ],
       ),
     );
@@ -214,17 +233,20 @@ class OfflineBanner extends StatelessWidget {
 
 /// Inline retry button row for per-item errors.
 class InlineRetry extends StatelessWidget {
-  final String label;
+  final String? label;
   final VoidCallback onRetry;
+  final LanguageOption lang;
 
   const InlineRetry({
     super.key,
-    this.label = 'Failed to load',
+    this.lang = LanguageOption.en,
+    this.label,
     required this.onRetry,
   });
 
   @override
   Widget build(BuildContext context) {
+    final displayLabel = label ?? AppTranslations.t('failedToLoad', lang);
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -238,10 +260,11 @@ class InlineRetry extends StatelessWidget {
           const SizedBox(width: 8),
           Expanded(
             child: Text(
-              label,
+              displayLabel,
               style: const TextStyle(
                 fontSize: 11,
-                fontWeight: FontWeight.w600,                  color: AppColors.rose500,
+                fontWeight: FontWeight.w600,
+                color: AppColors.rose500,
               ),
             ),
           ),
@@ -253,9 +276,9 @@ class InlineRetry extends StatelessWidget {
                 color: AppColors.rose500,
                 borderRadius: BorderRadius.circular(8),
               ),
-              child: const Text(
-                'Retry',
-                style: TextStyle(
+              child: Text(
+                AppTranslations.t('retry', lang),
+                style: const TextStyle(
                   fontSize: 10,
                   fontWeight: FontWeight.w700,
                   color: Colors.white,

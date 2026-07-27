@@ -30,6 +30,7 @@ class AuthIdentity {
         preferredLanguage: json['preferred_language'] == 'ur'
             ? PreferredLanguage.ur
             : PreferredLanguage.en,
-        createdAt: DateTime.parse(json['created_at'] as String),
+        createdAt: DateTime.tryParse(json['created_at'] as String? ?? '') ??
+            DateTime.now(),
       );
 }

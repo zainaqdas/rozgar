@@ -127,14 +127,17 @@ class Job {
             : null,
         budgetAmount: (json['budget_amount'] as num?)?.toDouble() ?? 0,
         budgetType: _parseBudgetType(json['budget_type']),
-        pinLocation: LocationPoint.fromJson(
-            json['pin_location'] as Map<String, dynamic>),
+        pinLocation: json['pin_location'] != null
+            ? LocationPoint.fromJson(
+                json['pin_location'] as Map<String, dynamic>)
+            : const LocationPoint(lat: 31.5204, lng: 74.3587),
         status: _parseStatus(json['status']),
         urgency: _parseUrgency(json['urgency']),
         scheduledFor: json['scheduled_for'] != null
-            ? DateTime.parse(json['scheduled_for'] as String)
+            ? DateTime.tryParse(json['scheduled_for'] as String? ?? '')
             : null,
-        createdAt: DateTime.parse(json['created_at'] as String),
+        createdAt: DateTime.tryParse(json['created_at'] as String? ?? '') ??
+            DateTime.now(),
         hiredWorkerProfileId:
             json['hired_worker_profile_id'] as String?,
       );

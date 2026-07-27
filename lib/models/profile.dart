@@ -98,9 +98,12 @@ class Profile {
         profilePhotoUrl: json['profile_photo_url'] as String? ?? '',
         phone: json['phone'] as String?,
         city: json['city'] as String? ?? 'Lahore',
-        homeLocation: LocationPoint.fromJson(
-            json['home_location'] as Map<String, dynamic>),
-        createdAt: DateTime.parse(json['created_at'] as String),
+        homeLocation: json['home_location'] != null
+            ? LocationPoint.fromJson(
+                json['home_location'] as Map<String, dynamic>)
+            : const LocationPoint(lat: 31.5204, lng: 74.3587),
+        createdAt: DateTime.tryParse(json['created_at'] as String? ?? '') ??
+            DateTime.now(),
         isVerified: json['is_verified'] as bool? ?? false,
         idVerificationStatus: _parseIdStatus(json['id_verification_status']),
         accountStatus: _parseAccountStatus(json['account_status']),

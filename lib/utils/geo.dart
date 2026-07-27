@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:math' as math;
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 /// Calculates straight-line distance in kilometers between two geo coordinates.
@@ -41,9 +42,9 @@ String formatDistance(double distanceKm) {
 Future<String> reverseGeocode(double lat, double lng) async {
   try {
     final uri = Uri.parse(
-      'https://nominatim.openstreetmap.org/reverse?format=json&lat=$lat&lon=$lng&addressdetails=1',
+      'https://nominatim.openstreetmap.org/reverse?format=json&lat=$lat&lon=$lng&addressdetails=1&countrycodes=pk',
     );
-    final response = await http.get(uri);
+    final response = await http.get(uri).timeout(const Duration(seconds: 10));
     if (response.statusCode == 200) {
       final data = jsonDecode(response.body) as Map<String, dynamic>;
       final displayName = data['display_name'] as String?;
@@ -51,7 +52,9 @@ Future<String> reverseGeocode(double lat, double lng) async {
         return displayName;
       }
     }
-  } catch (_) {}
+  } catch (e) {
+    debugPrint('reverseGeocode error: $e');
+  }
   return reverseGeocodeMock(lat, lng);
 }
 
@@ -61,9 +64,9 @@ Future<List<Map<String, dynamic>>> searchLocations(String query) async {
   if (query.trim().isEmpty) return [];
   try {
     final uri = Uri.parse(
-      'https://nominatim.openstreetmap.org/search?format=json&q=${Uri.encodeQueryComponent(query)}&limit=5',
+      'https://nominatim.openstreetmap.org/search?format=json&q=${Uri.encodeQueryComponent(query)}&limit=5&countrycodes=pk',
     );
-    final response = await http.get(uri);
+    final response = await http.get(uri).timeout(const Duration(seconds: 10));
     if (response.statusCode == 200) {
       final data = jsonDecode(response.body) as List<dynamic>;
       return data.map((place) {
@@ -75,7 +78,9 @@ Future<List<Map<String, dynamic>>> searchLocations(String query) async {
         };
       }).toList();
     }
-  } catch (_) {}
+  } catch (e) {
+    debugPrint('searchLocations error: $e');
+  }
   return [];
 }
 

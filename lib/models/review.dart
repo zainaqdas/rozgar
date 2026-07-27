@@ -34,6 +34,7 @@ class Review {
         revieweeProfileId: json['reviewee_profile_id'] as String,
         rating: (json['rating'] as num?)?.toInt() ?? 5,
         comment: json['comment'] as String? ?? '',
-        createdAt: DateTime.parse(json['created_at'] as String),
+        createdAt: DateTime.tryParse(json['created_at'] as String? ?? '') ??
+            DateTime.now(),
       );
 }

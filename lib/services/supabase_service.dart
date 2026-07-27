@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/profile.dart';
 import '../models/job.dart';
@@ -6,6 +7,8 @@ import '../models/conversation.dart';
 import '../models/review.dart';
 import '../models/notification_item.dart';
 import '../models/location_point.dart';
+import '../models/favorite.dart';
+import '../models/report.dart';
 import 'supabase_config.dart';
 import '../utils/geo.dart';
 
@@ -18,10 +21,16 @@ import '../utils/geo.dart';
 /// client-side with the Haversine formula (can switch to PostGIS
 /// ST_DWithin later).
 class SupabaseService {
+  @visibleForTesting
+  SupabaseService.test();
+
   SupabaseService._();
   static final SupabaseService instance = SupabaseService._();
 
-  SupabaseClient get _client => SupabaseConfig.client;
+  @visibleForTesting
+  SupabaseClient? testClient;
+
+  SupabaseClient get _client => testClient ?? SupabaseConfig.client;
 
   // ===========================================================================
   // AUTH
@@ -74,15 +83,17 @@ class SupabaseService {
     return Profile.fromJson(response);
   }
 
-  /// Fetch the profile associated with the current auth user.
+  /// Fetch the first profile associated with the current auth user.
+  /// Uses limit(1) instead of maybeSingle() because dual-profile users
+  /// (employer + worker) legitimately have 2 rows.
   Future<Profile?> getProfileByAuthId(String authId) async {
     final response = await _client
         .from('profiles')
         .select()
         .eq('auth_identity_id', authId)
-        .maybeSingle();
-    if (response == null) return null;
-    return Profile.fromJson(response);
+        .limit(1);
+    if (response.isEmpty) return null;
+    return Profile.fromJson(response.first);
   }
 
   /// Fetch ALL profiles for a given auth identity (employer + worker).
@@ -154,7 +165,8 @@ class SupabaseService {
         .from('profiles')
         .select()
         .eq('profile_type', 'worker')
-        .eq('account_status', 'active');
+        .eq('account_status', 'active')
+        .limit(100);
     final allDetails = await _client
         .from('worker_details')
         .select();
@@ -210,7 +222,8 @@ class SupabaseService {
     final response = await _client
         .from('jobs')
         .select()
-        .order('created_at', ascending: false);
+        .order('created_at', ascending: false)
+        .limit(100);
     return response.map((j) => Job.fromJson(j)).toList();
   }
 
@@ -224,8 +237,32 @@ class SupabaseService {
     return response.map((j) => Job.fromJson(j)).toList();
   }
 
-  /// Fetch open jobs matching criteria. Distance filtering is client-side.
+  /// Fetch open jobs near a worker using PostGIS ST_DWithin RPC.
+  /// Falls back to client-side Haversine if RPC fails.
   Future<List<Job>> getJobsNearWorker({
+    required LocationPoint workerLocation,
+    required double radiusKm,
+    required List<String> categoryIds,
+  }) async {
+    try {
+      final response = await _client.rpc('nearby_jobs', params: {
+        'p_lat': workerLocation.lat,
+        'p_lng': workerLocation.lng,
+        'p_radius_km': radiusKm,
+        'p_category_ids': categoryIds,
+      });
+      return (response as List).map((j) => Job.fromJson(j)).toList();
+    } catch (e) {
+      debugPrint('nearby_jobs RPC failed, falling back to client-side: $e');
+      return _getJobsNearWorkerFallback(
+        workerLocation: workerLocation,
+        radiusKm: radiusKm,
+        categoryIds: categoryIds,
+      );
+    }
+  }
+
+  Future<List<Job>> _getJobsNearWorkerFallback({
     required LocationPoint workerLocation,
     required double radiusKm,
     required List<String> categoryIds,
@@ -234,7 +271,8 @@ class SupabaseService {
         .from('jobs')
         .select()
         .eq('status', 'open')
-        .order('created_at', ascending: false);
+        .order('created_at', ascending: false)
+        .limit(100);
 
     final jobs = response.map((j) => Job.fromJson(j));
     return jobs.where((job) {
@@ -310,23 +348,96 @@ class SupabaseService {
   }
 
   /// Batch-update applications for a job (hire one, reject others).
+  /// Uses the DB RPC function for atomicity, falls back to sequential.
   Future<void> hireAndReject({
     required String jobId,
     required String hiredWorkerProfileId,
     required List<String> rejectApplicationIds,
   }) async {
+    try {
+      await _callHireAndRejectRpc(jobId, hiredWorkerProfileId, rejectApplicationIds);
+    } catch (rpcError) {
+      debugPrint('hireAndReject RPC failed, falling back: $rpcError');
+      try {
+        if (rejectApplicationIds.isNotEmpty) {
+          await _rejectApplications(rejectApplicationIds);
+        }
+        await _hireApplication(jobId, hiredWorkerProfileId);
+      } catch (seqError) {
+        debugPrint('hireAndReject sequential fallback failed: $seqError');
+        await _rollbackApplications(jobId, hiredWorkerProfileId, rejectApplicationIds);
+        rethrow;
+      }
+    }
+  }
+
+  @visibleForTesting
+  Future<void> callHireAndRejectRpc(
+    String jobId,
+    String hiredWorkerProfileId,
+    List<String> rejectApplicationIds,
+  ) {
+    return _client.rpc('hire_and_reject', params: {
+      'p_job_id': jobId,
+      'p_hired_worker_profile_id': hiredWorkerProfileId,
+      'p_reject_application_ids': rejectApplicationIds,
+    });
+  }
+
+  Future<void> _callHireAndRejectRpc(
+    String jobId,
+    String hiredWorkerProfileId,
+    List<String> rejectApplicationIds,
+  ) {
+    return callHireAndRejectRpc(jobId, hiredWorkerProfileId, rejectApplicationIds);
+  }
+
+  @visibleForTesting
+  Future<void> rejectApplications(List<String> ids) async {
+    await _client
+        .from('applications')
+        .update({'status': 'rejected'})
+        .inFilter('id', ids);
+  }
+
+  Future<void> _rejectApplications(List<String> ids) => rejectApplications(ids);
+
+  @visibleForTesting
+  Future<void> hireApplication(String jobId, String workerProfileId) async {
     await _client
         .from('applications')
         .update({'status': 'hired'})
+        .eq('job_id', jobId)
+        .eq('worker_profile_id', workerProfileId);
+  }
+
+  Future<void> _hireApplication(String jobId, String workerProfileId) =>
+      hireApplication(jobId, workerProfileId);
+
+  @visibleForTesting
+  Future<void> rollbackApplications(
+    String jobId,
+    String hiredWorkerProfileId,
+    List<String> rejectApplicationIds,
+  ) async {
+    await _client
+        .from('applications')
+        .update({'status': 'pending'})
         .eq('job_id', jobId)
         .eq('worker_profile_id', hiredWorkerProfileId);
     if (rejectApplicationIds.isNotEmpty) {
       await _client
           .from('applications')
-          .update({'status': 'rejected'})
+          .update({'status': 'pending'})
           .inFilter('id', rejectApplicationIds);
     }
   }
+
+  Future<void> _rollbackApplications(
+    String jobId,
+    String hiredWorkerProfileId,
+    List<String> rejectApplicationIds,
+  ) => rollbackApplications(jobId, hiredWorkerProfileId, rejectApplicationIds);
 
   // ===========================================================================
   // CONVERSATIONS
@@ -338,17 +449,43 @@ class SupabaseService {
     required String employerProfileId,
     required String workerProfileId,
   }) async {
-    final existing = await _client
+    final existing = await _findConversation(jobId, workerProfileId);
+    if (existing != null) {
+      return Conversation.fromJson(existing);
+    }
+
+    try {
+      final response = await _insertConversation(jobId, employerProfileId, workerProfileId);
+      return Conversation.fromJson(response);
+    } catch (e) {
+      debugPrint('Conversation insert conflict (race): $e');
+      final retry = await _findConversation(jobId, workerProfileId);
+      if (retry != null) return Conversation.fromJson(retry);
+      rethrow;
+    }
+  }
+
+  @visibleForTesting
+  Future<Map<String, dynamic>?> findConversation(String jobId, String workerProfileId) {
+    return _client
         .from('conversations')
         .select()
         .eq('job_id', jobId)
         .eq('worker_profile_id', workerProfileId)
         .maybeSingle();
-    if (existing != null) {
-      return Conversation.fromJson(existing);
-    }
+  }
 
-    final response = await _client
+  Future<Map<String, dynamic>?> _findConversation(String jobId, String workerProfileId) {
+    return findConversation(jobId, workerProfileId);
+  }
+
+  @visibleForTesting
+  Future<Map<String, dynamic>> insertConversation(
+    String jobId,
+    String employerProfileId,
+    String workerProfileId,
+  ) {
+    return _client
         .from('conversations')
         .insert({
           'job_id': jobId,
@@ -359,7 +496,14 @@ class SupabaseService {
         })
         .select()
         .single();
-    return Conversation.fromJson(response);
+  }
+
+  Future<Map<String, dynamic>> _insertConversation(
+    String jobId,
+    String employerProfileId,
+    String workerProfileId,
+  ) {
+    return insertConversation(jobId, employerProfileId, workerProfileId);
   }
 
   /// Fetch all conversations involving [profileId].
@@ -392,7 +536,7 @@ class SupabaseService {
 
   /// Send a message in a conversation.
   Future<Message> sendMessage(Message message) async {
-    final data = message.toJson();
+    final data = Map<String, dynamic>.of(message.toJson());
     data.remove('read_at'); // Don't set read_at on send
     final response = await _client
         .from('messages')
@@ -520,5 +664,57 @@ class SupabaseService {
           },
         )
         .subscribe();
+  }
+
+  Future<void> saveDeviceToken(String token, String platform) async {
+    final profileId = _client.auth.currentUser?.id;
+    if (profileId == null) return;
+    await _client.from('device_tokens').upsert({
+      'id': 'dt-$profileId-$platform',
+      'profile_id': profileId,
+      'token': token,
+      'platform': platform,
+    });
+  }
+
+  // ===========================================================================
+  // FAVORITES
+  // ===========================================================================
+
+  Future<List<Favorite>> getFavorites(String profileId) async {
+    final response = await _client
+        .from('favorites')
+        .select()
+        .eq('profile_id', profileId);
+    return response.map((f) => Favorite.fromJson(f)).toList();
+  }
+
+  Future<void> addFavorite(String profileId, String favoritedProfileId) async {
+    await _client.from('favorites').upsert({
+      'id': 'fav-$profileId-$favoritedProfileId',
+      'profile_id': profileId,
+      'favorited_profile_id': favoritedProfileId,
+    });
+  }
+
+  Future<void> removeFavorite(String id) async {
+    await _client.from('favorites').delete().eq('id', id);
+  }
+
+  // ===========================================================================
+  // REPORTS
+  // ===========================================================================
+
+  Future<void> createReport(Report report) async {
+    await _client.from('reports').insert(report.toJson());
+  }
+
+  Future<List<Report>> getReports(String profileId) async {
+    final response = await _client
+        .from('reports')
+        .select()
+        .eq('reporter_profile_id', profileId)
+        .order('created_at', ascending: false);
+    return response.map((r) => Report.fromJson(r)).toList();
   }
 }

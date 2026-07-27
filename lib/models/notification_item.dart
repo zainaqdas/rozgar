@@ -77,7 +77,8 @@ class NotificationItem {
         bodyUr: json['body_ur'] as String? ?? '',
         payload: json['payload'] as Map<String, dynamic>?,
         isRead: json['is_read'] as bool? ?? false,
-        createdAt: DateTime.parse(json['created_at'] as String),
+        createdAt: DateTime.tryParse(json['created_at'] as String? ?? '') ??
+            DateTime.now(),
       );
 
   static NotificationType _parseType(dynamic v) {

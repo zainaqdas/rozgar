@@ -19,8 +19,8 @@ class LocationPoint {
       };
 
   factory LocationPoint.fromJson(Map<String, dynamic> json) => LocationPoint(
-        lat: (json['lat'] as num).toDouble(),
-        lng: (json['lng'] as num).toDouble(),
+        lat: (json['lat'] as num?)?.toDouble() ?? 0,
+        lng: (json['lng'] as num?)?.toDouble() ?? 0,
         address: json['address'] as String? ?? '',
         city: json['city'] as String?,
       );

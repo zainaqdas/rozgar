@@ -99,7 +99,9 @@ class RozgarBottomNav extends StatelessWidget {
       }
 
       final item = _navItem(tab, lang);
-      return GestureDetector(
+      return Tooltip(
+        message: item.label,
+        child: GestureDetector(
         onTap: () => onTabChange(tab),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 200),
@@ -152,6 +154,7 @@ class RozgarBottomNav extends StatelessWidget {
             ],
           ),
         ),
+        ),
       );
     }).toList();
   }
@@ -159,28 +162,29 @@ class RozgarBottomNav extends StatelessWidget {
   _NavItem _navItem(AppView tab, LanguageOption lang) {
     switch (tab) {
       case AppView.home:
-        return _NavItem(Icons.home_outlined, 'Home', AppColors.teal600);
+        return _NavItem(Icons.home_outlined,
+            AppTranslations.t('home', lang), AppColors.teal600);
       case AppView.jobsNearMe:
-        return _NavItem(
-            Icons.list_alt, 'Jobs Feed', AppColors.teal600);
+        return _NavItem(Icons.list_alt,
+            AppTranslations.t('jobsFeed', lang), AppColors.teal600);
       case AppView.postJob:
-        return _NavItem(
-            Icons.add_circle_outline, 'Post', AppColors.teal600);
+        return _NavItem(Icons.add_circle_outline,
+            AppTranslations.t('postJob', lang), AppColors.teal600);
       case AppView.nearbyWorkersMap:
-        return _NavItem(
-            Icons.location_on_outlined, 'Map', AppColors.teal600);
+        return _NavItem(Icons.location_on_outlined,
+            AppTranslations.t('map', lang), AppColors.teal600);
       case AppView.chat:
         return _NavItem(Icons.chat_outlined,
             AppTranslations.t('chat', lang), AppColors.teal600);
       case AppView.history:
-        return _NavItem(
-            Icons.attach_money, 'Earnings', AppColors.teal600);
+        return _NavItem(Icons.attach_money,
+            AppTranslations.t('earnings', lang), AppColors.teal600);
       case AppView.profile:
-        return _NavItem(
-            Icons.person_outline, 'Profile', AppColors.teal600);
+        return _NavItem(Icons.person_outline,
+            AppTranslations.t('profile', lang), AppColors.teal600);
       default:
-        return _NavItem(
-            Icons.home_outlined, 'Home', AppColors.teal600);
+        return _NavItem(Icons.home_outlined,
+            AppTranslations.t('home', lang), AppColors.teal600);
     }
   }
 }

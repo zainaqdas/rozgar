@@ -94,7 +94,7 @@ class NotificationsView extends StatelessWidget {
                           child: GestureDetector(
                             onTap: () {
                               if (n.payload?['jobId'] != null) {
-                                onOpenJobDetailsById(n.payload!['jobId'] as String);
+                                onOpenJobDetailsById(n.payload!['jobId'].toString());
                               }
                             },
                             child: Container(

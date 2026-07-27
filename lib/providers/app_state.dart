@@ -12,8 +12,7 @@ import '../services/supabase_service.dart';
 import '../services/supabase_config.dart';
 import '../utils/geo.dart';
 import '../utils/translations.dart';
-
-// ========== WORKER ENTRY ==========
+import '../utils/sanitize.dart';
 
 // ========== WORKER ENTRY ==========
 
@@ -33,6 +32,7 @@ class WorkerEntry {
 class AppState extends ChangeNotifier {
   final SupabaseService _supabase = SupabaseService.instance;
   bool _isSupabaseAvailable = true;
+  String? _lastOperationError;
 
   // Auth & Profiles
   AuthIdentity? _authIdentity;
@@ -42,8 +42,6 @@ class AppState extends ChangeNotifier {
   String? _activeProfileId;
   LanguageOption _language = LanguageOption.en;
 
-  /// True when authenticated but no profiles exist yet (new sign-up via email confirmation).
-  bool _needsOnboarding = false;
 
   // Jobs
   List<Job> _jobs = [];
@@ -81,6 +79,8 @@ class AppState extends ChangeNotifier {
         return;
       }
 
+      _isSupabaseAvailable = true;
+
       _authIdentity = AuthIdentity(
         id: session.user.id,
         phoneNumber: session.user.phone,
@@ -88,9 +88,9 @@ class AppState extends ChangeNotifier {
         preferredLanguage: _language == LanguageOption.ur
             ? PreferredLanguage.ur
             : PreferredLanguage.en,
-        createdAt: (session.user.createdAt is DateTime
-              ? session.user.createdAt as DateTime
-              : DateTime.tryParse(session.user.createdAt.toString()) ?? DateTime.now()),
+        createdAt:
+            DateTime.tryParse(session.user.createdAt.toString()) ??
+                DateTime.now(),
       );
 
       // Load ALL profiles for this auth user (both employer and worker)
@@ -104,10 +104,6 @@ class AppState extends ChangeNotifier {
         }
       }
 
-      // No profiles yet — needs onboarding
-      if (_employerProfile == null && _workerProfile == null) {
-        _needsOnboarding = true;
-      }
 
       // Set active profile
       if (_employerProfile != null) {
@@ -154,6 +150,7 @@ class AppState extends ChangeNotifier {
     } catch (e) {
       debugPrint('Supabase init error: $e');
       _isSupabaseAvailable = false;
+      _lastOperationError = 'Failed to initialize: ${e.toString()}';
     }
     notifyListeners();
   }
@@ -166,6 +163,7 @@ class AppState extends ChangeNotifier {
           .toList();
     } catch (e) {
       debugPrint('Failed to load workers from Supabase: $e');
+      _lastOperationError = 'Failed to load workers: ${e.toString()}';
     }
   }
 
@@ -207,6 +205,9 @@ class AppState extends ChangeNotifier {
     final channel = _supabase.subscribeToMessages(
       conversationId,
       (message) {
+        // Dedup by ID — the sender's own message arrives via realtime
+        // after being optimistically inserted locally.
+        if (_messages.any((m) => m.id == message.id)) return;
         _messages = [..._messages, message];
         _conversations = _conversations.map((c) {
           if (c.id == message.conversationId) {
@@ -237,7 +238,12 @@ class AppState extends ChangeNotifier {
   // ===== GETTERS =====
 
   bool get isSupabaseAvailable => _isSupabaseAvailable;
-  bool get needsOnboarding => _needsOnboarding;
+  String? get lastOperationError => _lastOperationError;
+  /// True when authenticated but no profiles exist yet (computed — never stale).
+  bool get needsOnboarding =>
+      _authIdentity != null &&
+      _employerProfile == null &&
+      _workerProfile == null;
   AuthIdentity? get authIdentity => _authIdentity;
   Profile? get employerProfile => _employerProfile;
   Profile? get workerProfile => _workerProfile;
@@ -271,6 +277,21 @@ class AppState extends ChangeNotifier {
   }
 
   // ===== ACTIONS (sync helpers) =====
+
+  /// Fire a Supabase task without awaiting, catching errors into [_lastOperationError].
+  void _fireAndForget(String label, Future<dynamic> Function() task) {
+    if (!_isSupabaseAvailable) return;
+    task().then((_) {}, onError: (e) {
+      debugPrint('$label failed: $e');
+      _lastOperationError = '$label failed';
+      notifyListeners();
+    });
+  }
+
+  void clearOperationError() {
+    _lastOperationError = null;
+    notifyListeners();
+  }
 
   void setLanguage(LanguageOption lang) {
     _language = lang;
@@ -307,6 +328,7 @@ class AppState extends ChangeNotifier {
       return 'Login failed. Please check your credentials.';
     } catch (e) {
       debugPrint('Sign in error: $e');
+      _lastOperationError = 'Sign in failed';
       return 'Login failed: ${e.toString()}';
     }
   }
@@ -330,6 +352,7 @@ class AppState extends ChangeNotifier {
       return 'Signup successful! Check your email to confirm your account.';
     } catch (e) {
       debugPrint('Sign up error: $e');
+      _lastOperationError = 'Sign up failed';
       return 'Signup failed: ${e.toString()}';
     }
   }
@@ -341,6 +364,7 @@ class AppState extends ChangeNotifier {
       return null; // no error
     } catch (e) {
       debugPrint('Password reset error: $e');
+      _lastOperationError = 'Password reset failed';
       return 'Failed to send reset email: ${e.toString()}';
     }
   }
@@ -370,8 +394,9 @@ class AppState extends ChangeNotifier {
     if (_isSupabaseAvailable) {
       try {
         await _supabase.signOut();
-      } catch (_) {
-        // Ignore errors during sign out
+      } catch (e) {
+        debugPrint('Sign out error: $e');
+        _lastOperationError = 'Sign out failed';
       }
     }
     _authIdentity = null;
@@ -397,20 +422,22 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  void completeWorkerOnboarding({
+  Future<void> completeWorkerOnboarding({
     required String displayName,
     required List<String> categoryIds,
     required String bio,
     required int yearsExperience,
     required LocationPoint homeLocation,
-  }) {
+  }) async {
+    final safeName = sanitizeInput(displayName);
+    final safeBio = sanitizeInput(bio);
     final authId = _authIdentity?.id;
     if (authId == null) return;
     _workerProfile = Profile(
       id: 'wrk-$authId',
       authIdentityId: authId,
       profileType: ProfileType.worker,
-      displayName: displayName,
+      displayName: safeName,
       profilePhotoUrl: '',
       city: (homeLocation.city != null && homeLocation.city!.isNotEmpty) ? homeLocation.city! : 'Lahore',
       homeLocation: homeLocation,
@@ -423,7 +450,7 @@ class AppState extends ChangeNotifier {
     _workerDetails = WorkerDetails(
       profileId: _workerProfile!.id,
       categoryIds: categoryIds,
-      bio: bio,
+      bio: safeBio,
       yearsExperience: yearsExperience,
       rateNote: '',
       availabilityStatus: AvailabilityStatus.today,
@@ -435,26 +462,32 @@ class AppState extends ChangeNotifier {
       responseTimeAvgMinutes: 0,
     );
     _activeProfileId = _workerProfile!.id;
-    _needsOnboarding = false;
     notifyListeners();
 
     if (_isSupabaseAvailable) {
-      _supabase.createProfile(_workerProfile!);
-      _supabase.createWorkerDetails(_workerDetails!);
+      try {
+        await _supabase.createProfile(_workerProfile!);
+        await _supabase.createWorkerDetails(_workerDetails!);
+      } catch (e) {
+        debugPrint('Failed to save worker onboarding: $e');
+        _lastOperationError = 'Failed to save profile';
+        notifyListeners();
+      }
     }
   }
 
-  void completeEmployerOnboarding({
+  Future<void> completeEmployerOnboarding({
     required String displayName,
     required LocationPoint homeLocation,
-  }) {
+  }) async {
+    final safeName = sanitizeInput(displayName);
     final authId = _authIdentity?.id;
     if (authId == null) return;
     _employerProfile = Profile(
       id: authId,
       authIdentityId: authId,
       profileType: ProfileType.employer,
-      displayName: displayName,
+      displayName: safeName,
       profilePhotoUrl: '',
       city: (homeLocation.city != null && homeLocation.city!.isNotEmpty) ? homeLocation.city! : 'Lahore',
       homeLocation: homeLocation,
@@ -465,11 +498,16 @@ class AppState extends ChangeNotifier {
       onboardingCompletionPct: 100,
     );
     _activeProfileId = _employerProfile!.id;
-    _needsOnboarding = false;
     notifyListeners();
 
     if (_isSupabaseAvailable) {
-      _supabase.createProfile(_employerProfile!);
+      try {
+        await _supabase.createProfile(_employerProfile!);
+      } catch (e) {
+        debugPrint('Failed to save employer onboarding: $e');
+        _lastOperationError = 'Failed to save profile';
+        notifyListeners();
+      }
     }
   }
 
@@ -484,13 +522,15 @@ class AppState extends ChangeNotifier {
     required LocationPoint pinLocation,
     required JobUrgency urgency,
   }) {
+    final safeTitle = sanitizeInput(title);
+    final safeDescription = sanitizeInput(description);
     final jobId = 'job-${DateTime.now().millisecondsSinceEpoch}';
     final job = Job(
       id: jobId,
       employerProfileId: employerProfileId,
       categoryId: categoryId,
-      title: title,
-      description: description,
+      title: safeTitle,
+      description: safeDescription,
       aiExtractedSummary: aiExtractedSummary,
       budgetAmount: budgetAmount,
       budgetType: budgetType,
@@ -503,28 +543,30 @@ class AppState extends ChangeNotifier {
     notifyListeners();
 
     if (_isSupabaseAvailable) {
-      _supabase.createJob(job);
-      // Notify nearby workers
-      for (final worker in _cachedWorkers) {
-        final dist = calculateDistanceKm(
-          lat1: job.pinLocation.lat, lng1: job.pinLocation.lng,
-          lat2: worker.details.currentLocation.lat, lng2: worker.details.currentLocation.lng,
-        );
-        if (dist <= worker.details.notificationRadiusKm) {
-          _supabase.createNotification(NotificationItem(
-            id: 'notif-${DateTime.now().millisecondsSinceEpoch}',
+      _fireAndForget('createJob', () async {
+        await _supabase.createJob(job);
+        for (var i = 0; i < _cachedWorkers.length; i++) {
+          final worker = _cachedWorkers[i];
+          final dist = calculateDistanceKm(
+            lat1: job.pinLocation.lat, lng1: job.pinLocation.lng,
+            lat2: worker.details.currentLocation.lat, lng2: worker.details.currentLocation.lng,
+          );
+          if (dist <= worker.details.notificationRadiusKm) {
+            await _supabase.createNotification(NotificationItem(
+            id: 'notif-${DateTime.now().millisecondsSinceEpoch}-$i',
             profileId: worker.profile.id,
             type: NotificationType.newJobRadius,
             titleEn: 'New Job Available Near You!',
             titleUr: 'آپ کے قریب نیا کام دستیاب ہے!',
-            bodyEn: 'A $title job is ${dist.toStringAsFixed(1)} km from your location.',
-            bodyUr: '$title کا کام آپ سے صرف ${dist.toStringAsFixed(1)} کلومیٹر دور ہے۔',
+            bodyEn: 'A $safeTitle job is ${dist.toStringAsFixed(1)} km from your location.',
+            bodyUr: '$safeTitle کا کام آپ سے صرف ${dist.toStringAsFixed(1)} کلومیٹر دور ہے۔',
             isRead: false,
             createdAt: DateTime.now(),
             payload: {'jobId': job.id},
           ));
         }
       }
+      });
     }
 
     return job;
@@ -560,13 +602,14 @@ class AppState extends ChangeNotifier {
   void expressInterest(String jobId, {String? message}) {
     if (_workerProfile == null) return;
 
+    final safeMessage = message != null ? sanitizeInput(message) : null;
     final app = Application(
       id: 'app-${DateTime.now().millisecondsSinceEpoch}',
       jobId: jobId,
       workerProfileId: _workerProfile!.id,
       status: ApplicationStatus.interested,
       appliedAt: DateTime.now(),
-      message: message ??
+      message: safeMessage ??
           'Assalam-o-Alaikum! I am available to start work immediately.',
       aiMatchNote: '⚡ Verified candidate, top rated in category nearby.',
     );
@@ -592,13 +635,13 @@ class AppState extends ChangeNotifier {
       _notifications.insert(0, notif);
 
       if (_isSupabaseAvailable) {
-        _supabase.createNotification(notif);
+        _fireAndForget('expressInterest:notif', () => _supabase.createNotification(notif));
       }
     }
     notifyListeners();
 
     if (_isSupabaseAvailable) {
-      _supabase.createApplication(app);
+      _fireAndForget('expressInterest:app', () => _supabase.createApplication(app));
     }
   }
 
@@ -649,21 +692,20 @@ class AppState extends ChangeNotifier {
       _notifications.insert(0, notif);
 
       if (_isSupabaseAvailable) {
-        _supabase.createNotification(notif);
+        _fireAndForget('hireWorker:notif', () => _supabase.createNotification(notif));
       }
     }
     notifyListeners();
 
     if (_isSupabaseAvailable) {
-      _supabase.updateJobStatus(jobId,
-          status: 'hired', hiredWorkerProfileId: workerProfileId);
-      // Reject other applicants in Supabase
+      _fireAndForget('hireWorker:update', () => _supabase.updateJobStatus(jobId,
+          status: 'hired', hiredWorkerProfileId: workerProfileId));
       if (rejectAppIds.isNotEmpty) {
-        _supabase.hireAndReject(
+        _fireAndForget('hireWorker:reject', () => _supabase.hireAndReject(
           jobId: jobId,
           hiredWorkerProfileId: workerProfileId,
           rejectApplicationIds: rejectAppIds,
-        );
+        ));
       }
     }
   }
@@ -676,16 +718,19 @@ class AppState extends ChangeNotifier {
         employerProfileId: _employerProfile!.id,
         workerProfileId: workerProfileId,
       );
-      // Update local cache
-      final existing = _conversations.indexWhere((c) => c.id == conv.id);
-      if (existing == -1) {
+      final existingIdx = _conversations.indexWhere(
+          (c) => c.jobId == conv.jobId && c.workerProfileId == conv.workerProfileId);
+      if (existingIdx != -1) {
+        _conversations[existingIdx] = conv;
+      } else {
         _conversations.insert(0, conv);
-        // Subscribe to realtime messages for the new conversation
-        _subscribeToConversation(conv.id);
-        notifyListeners();
       }
+      _subscribeToConversation(conv.id);
+      notifyListeners();
     } catch (e) {
       debugPrint('Failed to create conversation: $e');
+      _lastOperationError = 'Failed to create conversation';
+      notifyListeners();
     }
   }
 
@@ -697,7 +742,7 @@ class AppState extends ChangeNotifier {
     notifyListeners();
 
     if (_isSupabaseAvailable) {
-      _supabase.updateJobStatus(jobId, status: 'completed');
+      _fireAndForget('completeJob', () => _supabase.updateJobStatus(jobId, status: 'completed'));
     }
   }
 
@@ -706,18 +751,29 @@ class AppState extends ChangeNotifier {
         c.jobId == jobId && c.workerProfileId == workerProfileId).firstOrNull;
     if (existing != null) return existing;
 
+    if (_employerProfile == null) {
+      return Conversation(
+        id: 'conv-error-${DateTime.now().millisecondsSinceEpoch}',
+        jobId: jobId,
+        employerProfileId: '',
+        workerProfileId: workerProfileId,
+      );
+    }
+
     final conv = Conversation(
-      id: 'conv-${DateTime.now().millisecondsSinceEpoch}',
+      id: 'conv-${DateTime.now().millisecondsSinceEpoch}-$workerProfileId',
       jobId: jobId,
-      employerProfileId: _employerProfile?.id ?? '',
+      employerProfileId: _employerProfile!.id,
       workerProfileId: workerProfileId,
       lastMessageText: 'Conversation started',
       lastMessageTime: DateTime.now(),
     );
     _conversations.insert(0, conv);
+    // Subscribe immediately so messages sent before the Supabase
+    // round-trip completes are still received via realtime.
+    _subscribeToConversation(conv.id);
     notifyListeners();
 
-    // Also create in Supabase if available
     if (_isSupabaseAvailable) {
       _createConversationInSupabase(jobId, workerProfileId);
     }
@@ -732,12 +788,13 @@ class AppState extends ChangeNotifier {
   }) {
     if (activeProfile == null) return;
 
+    final safeContent = sanitizeInput(content);
     final msg = Message(
       id: 'msg-${DateTime.now().millisecondsSinceEpoch}',
       conversationId: conversationId,
       senderProfileId: activeProfile!.id,
       contentType: contentType,
-      content: content,
+      content: safeContent,
       mediaUrl: mediaUrl,
       sentAt: DateTime.now(),
     );
@@ -746,7 +803,7 @@ class AppState extends ChangeNotifier {
     _conversations = _conversations.map((c) {
       if (c.id == conversationId) {
         return c.copyWith(
-          lastMessageText: content,
+          lastMessageText: safeContent,
           lastMessageTime: msg.sentAt,
         );
       }
@@ -755,13 +812,14 @@ class AppState extends ChangeNotifier {
     notifyListeners();
 
     if (_isSupabaseAvailable) {
-      _supabase.sendMessage(msg);
-      // Sync conversation's last message to Supabase so other users see it
-      _supabase.updateConversationLastMessage(
-        conversationId,
-        lastMessageText: content,
-        lastMessageTime: msg.sentAt,
-      );
+      _fireAndForget('sendMessage', () async {
+        await _supabase.sendMessage(msg);
+        await _supabase.updateConversationLastMessage(
+          conversationId,
+          lastMessageText: safeContent,
+          lastMessageTime: msg.sentAt,
+        );
+      });
     }
   }
 
@@ -774,14 +832,14 @@ class AppState extends ChangeNotifier {
       reviewerProfileId: activeProfile!.id,
       revieweeProfileId: revieweeProfileId,
       rating: rating,
-      comment: comment,
+      comment: sanitizeInput(comment),
       createdAt: DateTime.now(),
     );
     _reviews.insert(0, review);
     notifyListeners();
 
     if (_isSupabaseAvailable) {
-      _supabase.createReview(review);
+      _fireAndForget('addReview', () => _supabase.createReview(review));
     }
   }
 
@@ -791,10 +849,10 @@ class AppState extends ChangeNotifier {
     notifyListeners();
 
     if (_isSupabaseAvailable) {
-      _supabase.updateWorkerDetails(
+      _fireAndForget('toggleOnline', () => _supabase.updateWorkerDetails(
         _workerDetails!.profileId,
         {'is_online_for_map': online},
-      );
+      ));
     }
   }
 
@@ -805,23 +863,24 @@ class AppState extends ChangeNotifier {
     notifyListeners();
 
     if (_isSupabaseAvailable) {
-      _supabase.updateWorkerDetails(
+      _fireAndForget('updateRadius', () => _supabase.updateWorkerDetails(
         _workerDetails!.profileId,
         {'notification_radius_km': radiusKm},
-      );
+      ));
     }
   }
 
   void updateWorkerBio(String bio) {
     if (_workerDetails == null) return;
-    _workerDetails = _workerDetails!.copyWith(bio: bio);
+    final safeBio = sanitizeInput(bio);
+    _workerDetails = _workerDetails!.copyWith(bio: safeBio);
     notifyListeners();
 
     if (_isSupabaseAvailable) {
-      _supabase.updateWorkerDetails(
+      _fireAndForget('updateBio', () => _supabase.updateWorkerDetails(
         _workerDetails!.profileId,
-        {'bio': bio},
-      );
+        {'bio': safeBio},
+      ));
     }
   }
 
@@ -836,7 +895,7 @@ class AppState extends ChangeNotifier {
     notifyListeners();
 
     if (_isSupabaseAvailable && _activeProfileId != null) {
-      _supabase.markNotificationsRead(_activeProfileId!);
+      _fireAndForget('markRead', () => _supabase.markNotificationsRead(_activeProfileId!));
     }
   }
 

@@ -12,16 +12,20 @@
 .swiftpm/
 migrate_working_dir/
 
+# Environment / secrets
+.env
+.env.local
+.env.production
+
 # IntelliJ related
 *.iml
 *.ipr
 *.iws
 .idea/
 
-# The .vscode folder contains launch configuration and tasks you configure in
-# VS Code which you may wish to be included in version control, so this line
-# is commented out by default.
-#.vscode/
+# The .vscode folder contains launch configuration with --dart-define
+# API keys. Kept out of version control to avoid leaking secrets.
+.vscode/
 
 # Flutter/Dart/Pub related
 **/doc/api/

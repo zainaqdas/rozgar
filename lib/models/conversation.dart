@@ -1,6 +1,6 @@
 import 'location_point.dart';
 
-enum ContentType { text, image, voice, location, quote }
+enum ContentType { text, image, voice, location, quote, file }
 
 class Conversation {
   final String id;
@@ -59,7 +59,7 @@ class Conversation {
         workerProfileId: json['worker_profile_id'] as String,
         lastMessageText: json['last_message_text'] as String?,
         lastMessageTime: json['last_message_time'] != null
-            ? DateTime.parse(json['last_message_time'] as String)
+            ? DateTime.tryParse(json['last_message_time'] as String? ?? '')
             : null,
         unreadCountEmployer:
             (json['unread_count_employer'] as num?)?.toInt() ?? 0,
@@ -112,12 +112,14 @@ class Message {
         senderProfileId: json['sender_profile_id'] as String,
         contentType: _parseContentType(json['content_type']),
         content: json['content'] as String? ?? '',
-        sentAt: DateTime.parse(json['sent_at'] as String),
+        sentAt:
+            DateTime.tryParse(json['sent_at']?.toString() ?? '') ??
+                DateTime.now(),
         readAt: json['read_at'] != null
-            ? DateTime.parse(json['read_at'] as String)
+            ? DateTime.tryParse(json['read_at'].toString())
             : null,
         mediaUrl: json['media_url'] as String?,
-        audioDurationSec: json['audio_duration_sec'] as int?,
+        audioDurationSec: (json['audio_duration_sec'] as num?)?.toInt(),
         locationPoint: json['location_point'] != null
             ? LocationPoint.fromJson(
                 json['location_point'] as Map<String, dynamic>)
@@ -134,6 +136,8 @@ class Message {
         return ContentType.location;
       case 'quote':
         return ContentType.quote;
+      case 'file':
+        return ContentType.file;
       default:
         return ContentType.text;
     }

@@ -54,5 +54,19 @@ void main() {
       expect(marker.isEmployer, false);
       expect(marker.snippet, '4.9');
     });
+
+    test('markers with same id but different coords are not equal', () {
+      final a = MapMarker(id: 'w1', lat: 31.5, lng: 74.3, title: 'A');
+      final b = MapMarker(id: 'w1', lat: 31.6, lng: 74.4, title: 'A');
+      expect(a == b, isFalse);
+      expect(a.hashCode == b.hashCode, isFalse);
+    });
+
+    test('markers with same id and coords are equal', () {
+      final a = MapMarker(id: 'w1', lat: 31.5, lng: 74.3, title: 'A');
+      final b = MapMarker(id: 'w1', lat: 31.5, lng: 74.3, title: 'B');
+      expect(a == b, isTrue);
+      expect(a.hashCode, b.hashCode);
+    });
   });
 }

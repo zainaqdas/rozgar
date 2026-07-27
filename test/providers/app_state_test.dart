@@ -6,6 +6,7 @@ import 'package:rozgar/models/job.dart';
 import 'package:rozgar/models/location_point.dart';
 import 'package:rozgar/models/application.dart';
 
+
 void main() {
   late AppState appState;
 
@@ -498,6 +499,375 @@ void main() {
       await appState.logout();
       await appState.logout();
       expect(appState.authIdentity, isNull);
+    });
+  });
+
+  group('Error surfacing', () {
+    setUp(() {
+      appState = AppState();
+    });
+
+    tearDown(() {
+      appState.dispose();
+    });
+
+    test('clearOperationError resets lastOperationError to null', () {
+      expect(appState.lastOperationError, isNull);
+      appState.clearOperationError();
+      expect(appState.lastOperationError, isNull);
+    });
+  });
+
+  group('getJobsNearWorker', () {
+    setUp(() async {
+      appState = AppState();
+      await appState.initialize();
+      appState.loginWithPhoneOrEmail('test@rozgar.pk');
+      appState.completeEmployerOnboarding(
+        displayName: 'Test Employer',
+        homeLocation: const LocationPoint(lat: 31.52, lng: 74.36, address: 'Test'),
+      );
+    });
+
+    tearDown(() {
+      appState.dispose();
+    });
+
+    test('returns jobs within radius and matching categories', () {
+      appState.addJob(
+        employerProfileId: appState.employerProfile!.id,
+        categoryId: 'home-electrical',
+        title: 'Electrical Repair',
+        description: 'Fix wiring',
+        budgetAmount: 5000,
+        budgetType: BudgetType.fixed,
+        pinLocation: const LocationPoint(lat: 31.52, lng: 74.36, address: 'Lahore'),
+        urgency: JobUrgency.today,
+      );
+      appState.addJob(
+        employerProfileId: appState.employerProfile!.id,
+        categoryId: 'plumbing',
+        title: 'Pipe Repair',
+        description: 'Fix pipe',
+        budgetAmount: 3000,
+        budgetType: BudgetType.fixed,
+        pinLocation: const LocationPoint(lat: 31.52, lng: 74.36, address: 'Lahore'),
+        urgency: JobUrgency.scheduled,
+      );
+
+      final nearby = appState.getJobsNearWorker(
+        workerLocation: const LocationPoint(lat: 31.52, lng: 74.36),
+        radiusKm: 10,
+        categoryIds: ['home-electrical'],
+      );
+
+      expect(nearby.length, 1);
+      expect(nearby.first.title, 'Electrical Repair');
+    });
+
+    test('returns empty when no jobs match radius', () {
+      appState.addJob(
+        employerProfileId: appState.employerProfile!.id,
+        categoryId: 'home-electrical',
+        title: 'Far Job',
+        description: 'Far away',
+        budgetAmount: 1000,
+        budgetType: BudgetType.fixed,
+        pinLocation: const LocationPoint(lat: 33.68, lng: 73.05, address: 'Islamabad'),
+        urgency: JobUrgency.today,
+      );
+
+      final nearby = appState.getJobsNearWorker(
+        workerLocation: const LocationPoint(lat: 31.52, lng: 74.36),
+        radiusKm: 10,
+        categoryIds: [],
+      );
+
+      expect(nearby, isEmpty);
+    });
+
+    test('excludes hired and completed jobs', () {
+      final pinLoc = const LocationPoint(lat: 31.52, lng: 74.36, address: 'Test');
+      appState.addJob(
+        employerProfileId: appState.employerProfile!.id,
+        categoryId: 'home-test',
+        title: 'Open Job',
+        description: 'Still open',
+        budgetAmount: 1000,
+        budgetType: BudgetType.fixed,
+        pinLocation: pinLoc,
+        urgency: JobUrgency.today,
+      );
+      final jobId = appState.jobs.first.id;
+      appState.completeJob(jobId);
+
+      final nearby = appState.getJobsNearWorker(
+        workerLocation: const LocationPoint(lat: 31.52, lng: 74.36),
+        radiusKm: 10,
+        categoryIds: [],
+      );
+
+      expect(nearby, isEmpty);
+    });
+  });
+
+  group('getPublicProfile', () {
+    setUp(() async {
+      appState = AppState();
+      await appState.initialize();
+      appState.loginWithPhoneOrEmail('test@rozgar.pk');
+      appState.completeWorkerOnboarding(
+        displayName: 'Test Worker',
+        categoryIds: ['home-electrical'],
+        bio: 'Test bio',
+        yearsExperience: 5,
+        homeLocation: const LocationPoint(lat: 31.52, lng: 74.36, address: 'Test'),
+      );
+      appState.completeEmployerOnboarding(
+        displayName: 'Test Employer',
+        homeLocation: const LocationPoint(lat: 31.52, lng: 74.36, address: 'Test'),
+      );
+    });
+
+    tearDown(() {
+      appState.dispose();
+    });
+
+    test('returns self worker profile', () {
+      final result = appState.getPublicProfile(appState.workerProfile!.id);
+      expect(result, isNotNull);
+      expect(result!.profile.displayName, 'Test Worker');
+      expect(result.workerDetails, isNotNull);
+    });
+
+    test('returns self employer profile', () {
+      final result = appState.getPublicProfile(appState.employerProfile!.id);
+      expect(result, isNotNull);
+      expect(result!.profile.displayName, 'Test Employer');
+      expect(result.workerDetails, isNull);
+    });
+
+    test('returns null for unknown profile', () {
+      expect(appState.getPublicProfile('unknown-id'), isNull);
+    });
+  });
+
+  group('Sanitization', () {
+    setUp(() async {
+      appState = AppState();
+      await appState.initialize();
+      appState.loginWithPhoneOrEmail('test@rozgar.pk');
+      appState.completeEmployerOnboarding(
+        displayName: 'Test Employer',
+        homeLocation: const LocationPoint(lat: 31.52, lng: 74.36, address: 'Test'),
+      );
+      appState.completeWorkerOnboarding(
+        displayName: 'Test Worker',
+        categoryIds: ['home-electrical'],
+        bio: 'Test bio',
+        yearsExperience: 5,
+        homeLocation: const LocationPoint(lat: 31.52, lng: 74.36, address: 'Test'),
+      );
+    });
+
+    tearDown(() {
+      appState.dispose();
+    });
+
+    test('addJob strips HTML from title and description', () {
+      appState.addJob(
+        employerProfileId: appState.employerProfile!.id,
+        categoryId: 'home-test',
+        title: '<script>alert("xss")</script>Clean Title',
+        description: '<b>Safe</b> description',
+        budgetAmount: 1000,
+        budgetType: BudgetType.fixed,
+        pinLocation: const LocationPoint(lat: 31.52, lng: 74.36, address: 'Test'),
+        urgency: JobUrgency.today,
+      );
+
+      expect(appState.jobs.first.title, contains('Clean Title'));
+      expect(appState.jobs.first.title, isNot(contains('<script>')));
+      expect(appState.jobs.first.description, isNot(contains('<b>')));
+    });
+
+    test('sendMessage strips HTML from content', () {
+      appState.completeEmployerOnboarding(
+        displayName: 'Test Employer',
+        homeLocation: const LocationPoint(lat: 31.52, lng: 74.36, address: 'Test'),
+      );
+      final conv = appState.getOrCreateConversation('job-test', appState.workerProfile!.id);
+      appState.sendMessage(conv.id, '<a href="bad">click me</a>Hello');
+
+      expect(appState.messages.last.content, 'click meHello');
+      expect(appState.messages.last.content, isNot(contains('<a')));
+    });
+  });
+
+  group('Conversation operations', () {
+    setUp(() async {
+      appState = AppState();
+      await appState.initialize();
+      appState.loginWithPhoneOrEmail('test@rozgar.pk');
+      appState.completeEmployerOnboarding(
+        displayName: 'Test Employer',
+        homeLocation: const LocationPoint(lat: 31.52, lng: 74.36, address: 'Test'),
+      );
+      appState.completeWorkerOnboarding(
+        displayName: 'Test Worker',
+        categoryIds: ['home-electrical'],
+        bio: 'Test bio',
+        yearsExperience: 5,
+        homeLocation: const LocationPoint(lat: 31.52, lng: 74.36, address: 'Test'),
+      );
+    });
+
+    tearDown(() {
+      appState.dispose();
+    });
+
+    test('getOrCreateConversation creates new conversation', () {
+      final conv = appState.getOrCreateConversation('job-1', appState.workerProfile!.id);
+      expect(conv.jobId, 'job-1');
+      expect(conv.workerProfileId, appState.workerProfile!.id);
+      expect(appState.conversations.length, 1);
+    });
+
+    test('getOrCreateConversation returns existing conversation', () {
+      final conv1 = appState.getOrCreateConversation('job-1', appState.workerProfile!.id);
+      final conv2 = appState.getOrCreateConversation('job-1', appState.workerProfile!.id);
+      expect(conv1.id, conv2.id);
+      expect(appState.conversations.length, 1);
+    });
+
+    test('sendMessage adds multiple messages in order', () {
+      final conv = appState.getOrCreateConversation('job-1', appState.workerProfile!.id);
+      appState.sendMessage(conv.id, 'First');
+      appState.sendMessage(conv.id, 'Second');
+
+      expect(appState.messages.length, 2);
+      expect(appState.messages[0].content, 'First');
+      expect(appState.messages[1].content, 'Second');
+    });
+  });
+
+  group('Worker details', () {
+    setUp(() async {
+      appState = AppState();
+      await appState.initialize();
+      appState.loginWithPhoneOrEmail('test@rozgar.pk');
+      appState.completeWorkerOnboarding(
+        displayName: 'Test Worker',
+        categoryIds: ['home-electrical'],
+        bio: 'Initial bio',
+        yearsExperience: 5,
+        homeLocation: const LocationPoint(lat: 31.52, lng: 74.36, address: 'Test'),
+      );
+    });
+
+    tearDown(() {
+      appState.dispose();
+    });
+
+    test('updateWorkerBio updates the bio', () {
+      appState.updateWorkerBio('New bio text');
+      expect(appState.workerDetails!.bio, 'New bio text');
+
+      appState.updateWorkerBio('Updated again');
+      expect(appState.workerDetails!.bio, 'Updated again');
+    });
+
+    test('updateWorkerBio strips HTML', () {
+      appState.updateWorkerBio('<script>alert(1)</script>Safe bio');
+      expect(appState.workerDetails!.bio, 'alert(1)Safe bio');
+      expect(appState.workerDetails!.bio, isNot(contains('<script>')));
+    });
+  });
+
+  group('Hire with reject', () {
+    setUp(() async {
+      appState = AppState();
+      await appState.initialize();
+      appState.loginWithPhoneOrEmail('test@rozgar.pk');
+      appState.completeEmployerOnboarding(
+        displayName: 'Test Employer',
+        homeLocation: const LocationPoint(lat: 31.52, lng: 74.36, address: 'Test'),
+      );
+      appState.completeWorkerOnboarding(
+        displayName: 'Test Worker',
+        categoryIds: ['home-electrical'],
+        bio: 'Test bio',
+        yearsExperience: 5,
+        homeLocation: const LocationPoint(lat: 31.52, lng: 74.36, address: 'Test'),
+      );
+    });
+
+    tearDown(() {
+      appState.dispose();
+    });
+
+    test('hireWorker updates application to hired', () {
+      final pinLoc = const LocationPoint(lat: 31.52, lng: 74.36, address: 'Test');
+      appState.addJob(
+        employerProfileId: appState.employerProfile!.id,
+        categoryId: 'home-test',
+        title: 'Test Job',
+        description: 'Test',
+        budgetAmount: 1000,
+        budgetType: BudgetType.fixed,
+        pinLocation: pinLoc,
+        urgency: JobUrgency.today,
+      );
+      final jobId = appState.jobs.first.id;
+      final workerId = appState.workerProfile!.id;
+
+      appState.expressInterest(jobId);
+      appState.hireWorker(jobId, workerId);
+
+      final hiredApps = appState.applications.where((a) => a.status == ApplicationStatus.hired).toList();
+      expect(hiredApps.length, 1);
+      expect(hiredApps.first.workerProfileId, workerId);
+
+      final hiredJob = appState.jobs.firstWhere((j) => j.id == jobId);
+      expect(hiredJob.status, JobStatus.hired);
+      expect(hiredJob.hiredWorkerProfileId, workerId);
+    });
+  });
+
+  group('Conversation dedup (failure-mode)', () {
+    setUp(() async {
+      appState = AppState();
+      await appState.initialize();
+      appState.loginWithPhoneOrEmail('test@rozgar.pk');
+      appState.completeEmployerOnboarding(
+        displayName: 'Test Employer',
+        homeLocation: const LocationPoint(lat: 31.52, lng: 74.36, address: 'Test'),
+      );
+    });
+
+    tearDown(() {
+      appState.dispose();
+    });
+
+    test('getOrCreateConversation returns same instance for same job+worker', () {
+      final conv1 = appState.getOrCreateConversation('job-dedup', 'wrk-1');
+      final conv2 = appState.getOrCreateConversation('job-dedup', 'wrk-1');
+      expect(identical(conv1, conv2), true);
+    });
+
+    test('getOrCreateConversation creates distinct convs for different workers', () {
+      final conv1 = appState.getOrCreateConversation('job-dedup', 'wrk-1');
+      final conv2 = appState.getOrCreateConversation('job-dedup', 'wrk-2');
+      expect(conv1.id, isNot(equals(conv2.id)));
+    });
+
+    test('no duplicate conversations in list after multiple calls', () {
+      appState.getOrCreateConversation('job-dedup', 'wrk-1');
+      appState.getOrCreateConversation('job-dedup', 'wrk-1');
+      appState.getOrCreateConversation('job-dedup', 'wrk-1');
+      final matching = appState.conversations
+          .where((c) => c.jobId == 'job-dedup' && c.workerProfileId == 'wrk-1');
+      expect(matching.length, 1);
     });
   });
 }

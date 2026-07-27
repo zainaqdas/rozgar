@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:file_picker/file_picker.dart';
 import '../../providers/app_state.dart';
+import '../../services/storage_service.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/formatters.dart';
 import '../../models/job.dart';
@@ -33,10 +36,44 @@ class _ChatScreenState extends State<ChatScreen> {
   int _voiceSec = 0;
 
   @override
+  void initState() {
+    super.initState();
+    widget.appState.addListener(_onStateChanged);
+  }
+
+  @override
+  void didUpdateWidget(covariant ChatScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.appState != widget.appState) {
+      oldWidget.appState.removeListener(_onStateChanged);
+      widget.appState.addListener(_onStateChanged);
+    }
+  }
+
+  @override
   void dispose() {
+    widget.appState.removeListener(_onStateChanged);
     _msgController.dispose();
     _scrollController.dispose();
     super.dispose();
+  }
+
+  void _onStateChanged() {
+    if (!mounted) return;
+    setState(() {});
+    _scrollToBottom();
+  }
+
+  void _scrollToBottom() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scrollController.hasClients) {
+        _scrollController.animateTo(
+          _scrollController.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOut,
+        );
+      }
+    });
   }
 
   void _openConversation(String conversationId) {
@@ -234,15 +271,56 @@ class _ChatScreenState extends State<ChatScreen> {
                         child: Column(
                           crossAxisAlignment: isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
                           children: [
-                            Text(
-                              msg.content,
-                              style: TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
-                                color: isMe ? Colors.white : AppColors.slate800,
-                                height: 1.4,
+                            if (msg.contentType == ContentType.image && msg.mediaUrl != null)
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(10),
+                                child: Image.network(
+                                  msg.mediaUrl!,
+                                  width: 200,
+                                  height: 200,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (_, _, _) => const Icon(Icons.broken_image, size: 48),
+                                ),
+                              )
+                            else if (msg.contentType == ContentType.file && msg.mediaUrl != null)
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.insert_drive_file, size: 20,
+                                      color: isMe ? Colors.white70 : AppColors.slate600),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    msg.content.replaceAll('📎 ', ''),
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w600,
+                                      color: isMe ? Colors.white : AppColors.slate800,
+                                      decoration: TextDecoration.underline,
+                                    ),
+                                  ),
+                                ],
+                              )
+                            else if (msg.contentType == ContentType.voice)
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.play_circle_fill, size: 20,
+                                      color: isMe ? Colors.white : AppColors.teal600),
+                                  const SizedBox(width: 4),
+                                  Icon(Icons.graphic_eq, size: 18,
+                                      color: isMe ? Colors.white70 : AppColors.slate500),
+                                ],
+                              )
+                            else
+                              Text(
+                                msg.content,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: isMe ? Colors.white : AppColors.slate800,
+                                  height: 1.4,
+                                ),
                               ),
-                            ),
                             const SizedBox(height: 4),
                             Text(
                               formatTime(msg.sentAt),
@@ -460,10 +538,38 @@ class _ChatScreenState extends State<ChatScreen> {
             child: Container(
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
-                color: _isRecordingVoice ? AppColors.rose500 : AppColors.slate100,
-                borderRadius: BorderRadius.circular(20),
+                color: _isRecordingVoice ? AppColors.amber500 : AppColors.slate100,
+                borderRadius: BorderRadius.circular(10),
               ),
-              child: Icon(Icons.mic, size: 18, color: _isRecordingVoice ? Colors.white : AppColors.slate600),
+              child: Icon(
+                _isRecordingVoice ? Icons.stop : Icons.mic,
+                size: 18,
+                color: _isRecordingVoice ? Colors.white : AppColors.slate600,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          GestureDetector(
+            onTap: () => _pickAndSendImage(conversation.id),
+            child: Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: AppColors.slate100,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Icon(Icons.image, size: 18, color: AppColors.slate600),
+            ),
+          ),
+          const SizedBox(width: 8),
+          GestureDetector(
+            onTap: () => _pickAndSendFile(conversation.id),
+            child: Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: AppColors.slate100,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Icon(Icons.attach_file, size: 18, color: AppColors.slate600),
             ),
           ),
           const SizedBox(width: 8),
@@ -513,6 +619,57 @@ class _ChatScreenState extends State<ChatScreen> {
         ],
       ),
     );
+  }
+
+  Future<void> _pickAndSendImage(String conversationId) async {
+    final picker = ImagePicker();
+    final picked = await picker.pickImage(source: ImageSource.gallery, maxWidth: 1200);
+    if (picked == null) return;
+    final bytes = await picked.readAsBytes();
+    try {
+      final url = await StorageService.instance.uploadChatMedia(
+        conversationId,
+        widget.appState.activeProfile?.id ?? 'unknown',
+        bytes,
+        picked.name,
+      );
+      if (mounted) {
+        widget.appState.sendMessage(
+          conversationId,
+          '📷 ${picked.name}',
+          contentType: ContentType.image,
+          mediaUrl: url,
+        );
+      }
+    } catch (e) {
+      debugPrint('Failed to upload image: $e');
+    }
+  }
+
+  Future<void> _pickAndSendFile(String conversationId) async {
+    final result = await FilePicker.platform.pickFiles();
+    if (result == null || result.files.isEmpty) return;
+    final file = result.files.first;
+    final bytes = file.bytes;
+    if (bytes == null) return;
+    try {
+      final url = await StorageService.instance.uploadChatMedia(
+        conversationId,
+        widget.appState.activeProfile?.id ?? 'unknown',
+        bytes,
+        file.name,
+      );
+      if (mounted) {
+        widget.appState.sendMessage(
+          conversationId,
+          '📎 ${file.name}',
+          contentType: ContentType.file,
+          mediaUrl: url,
+        );
+      }
+    } catch (e) {
+      debugPrint('Failed to upload file: $e');
+    }
   }
 }
 

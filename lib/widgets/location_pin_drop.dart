@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import '../models/location_point.dart';
@@ -41,7 +42,7 @@ class _LocationPinDropState extends State<LocationPinDrop> {
   List<Map<String, dynamic>> _searchResults = [];
   bool _isSearching = false;
   bool _hasSearched = false;
-  String? _searchTaskId;
+  Timer? _debounceTimer;
 
   @override
   void initState() {
@@ -58,8 +59,10 @@ class _LocationPinDropState extends State<LocationPinDrop> {
 
   @override
   void dispose() {
+    _debounceTimer?.cancel();
     _searchController.dispose();
     _searchFocusNode.dispose();
+    _mapController.dispose();
     super.dispose();
   }
 
@@ -86,13 +89,16 @@ class _LocationPinDropState extends State<LocationPinDrop> {
           timeLimit: Duration(seconds: 6),
         ),
       );
+      if (!mounted) return;
       setState(() {
         _lat = pos.latitude;
         _lng = pos.longitude;
       });
       await _mapController.animateTo(pos.latitude, pos.longitude, 15);
       await _reverseGeocodeCurrent();
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('GPS init error: $e');
+    }
   }
 
   Future<void> _reverseGeocodeCurrent() async {
@@ -113,6 +119,7 @@ class _LocationPinDropState extends State<LocationPinDrop> {
       bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) {
         await Geolocator.openLocationSettings();
+        if (!mounted) return;
         setState(() => _isLocating = false);
         return;
       }
@@ -120,6 +127,7 @@ class _LocationPinDropState extends State<LocationPinDrop> {
       if (permission == LocationPermission.denied) {
         permission = await Geolocator.requestPermission();
         if (permission == LocationPermission.denied) {
+          if (!mounted) return;
           setState(() => _isLocating = false);
           return;
         }
@@ -142,7 +150,7 @@ class _LocationPinDropState extends State<LocationPinDrop> {
     } catch (e) {
       debugPrint('GPS error: $e');
     }
-    setState(() => _isLocating = false);
+    if (mounted) setState(() => _isLocating = false);
   }
 
   void _onCameraMove(double lat, double lng) {
@@ -161,26 +169,25 @@ class _LocationPinDropState extends State<LocationPinDrop> {
   }
 
   void _onSearchChanged(String query) {
-    _searchTaskId = query; // simple debounce key
-    Future.delayed(const Duration(milliseconds: 400), () async {
-      if (_searchTaskId != query) return;
+    _debounceTimer?.cancel();
+    _debounceTimer = Timer(const Duration(milliseconds: 400), () async {
       if (query.trim().isEmpty) {
-        setState(() {
-          _searchResults = [];
-          _isSearching = false;
-          _hasSearched = false;
-        });
+        if (mounted) {
+          setState(() {
+            _searchResults = [];
+            _isSearching = false;
+            _hasSearched = false;
+          });
+        }
         return;
       }
-      setState(() => _isSearching = true);
+      if (mounted) setState(() => _isSearching = true);
       final results = await searchLocations(query);
-      if (_searchTaskId != query) return;
-      if (mounted) {
-        setState(() {
-          _searchResults = results;
-          _hasSearched = true;
-        });
-      }
+      if (!mounted) return;
+      setState(() {
+        _searchResults = results;
+        _hasSearched = true;
+      });
     });
   }
 
@@ -203,9 +210,9 @@ class _LocationPinDropState extends State<LocationPinDrop> {
   }
 
   void _selectSearchResult(Map<String, dynamic> loc) {
-    final lat = loc['lat'] as double;
-    final lng = loc['lng'] as double;
-    final name = loc['name'] as String;
+    final lat = (loc['lat'] as num?)?.toDouble() ?? 0;
+    final lng = (loc['lng'] as num?)?.toDouble() ?? 0;
+    final name = loc['name'] as String? ?? '';
     _searchController.text = '';
     _searchResults = [];
     _isSearching = false;

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import '../../providers/app_state.dart';
+import '../../services/ai_service.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/translations.dart';
 import '../../data/categories.dart';
@@ -52,6 +53,7 @@ class _AuthScreenState extends State<AuthScreen> {
   ProfileType _selectedRole = ProfileType.worker;
   String _selectedCategoryId = 'home-electrical';
   int _yearsExperience = 5;
+  final _yearsExperienceController = TextEditingController(text: '5');
   final _bioController = TextEditingController();
   bool _isAiBioLoading = false;
   bool _isLocating = false;
@@ -68,6 +70,7 @@ class _AuthScreenState extends State<AuthScreen> {
       bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) {
         await Geolocator.openLocationSettings();
+        if (!mounted) return;
         setState(() => _isLocating = false);
         return;
       }
@@ -75,6 +78,7 @@ class _AuthScreenState extends State<AuthScreen> {
       if (permission == LocationPermission.denied) {
         permission = await Geolocator.requestPermission();
         if (permission == LocationPermission.denied) {
+          if (!mounted) return;
           setState(() => _isLocating = false);
           return;
         }
@@ -100,8 +104,9 @@ class _AuthScreenState extends State<AuthScreen> {
       }
     } catch (e) {
       debugPrint('GPS error: $e');
+    } finally {
+      if (mounted) setState(() => _isLocating = false);
     }
-    setState(() => _isLocating = false);
   }
 
   void _openMapPicker() {
@@ -136,6 +141,7 @@ class _AuthScreenState extends State<AuthScreen> {
     _signUpNameController.dispose();
     _otpController.dispose();
     _nameController.dispose();
+    _yearsExperienceController.dispose();
     _bioController.dispose();
     super.dispose();
   }
@@ -499,9 +505,15 @@ class _AuthScreenState extends State<AuthScreen> {
                 : () async {
                     if (_isPhone) {
                       // Phone OTP flow
-                      widget.appState.loginWithPhoneOrEmail(
-                          _contactController.text);
-                      setState(() => _step = 1);
+                      try {
+                        widget.appState.loginWithPhoneOrEmail(
+                            _contactController.text);
+                        if (mounted) setState(() => _step = 1);
+                      } catch (e) {
+                        if (mounted) {
+                          setState(() => _authError = 'Failed to send OTP: $e');
+                        }
+                      }
                     } else {
                       // Email + Password flow
                       setState(() {
@@ -1137,8 +1149,7 @@ class _AuthScreenState extends State<AuthScreen> {
               decoration: const InputDecoration(
                 labelText: 'Years Experience',
               ),
-              controller: TextEditingController(
-                  text: _yearsExperience.toString()),
+              controller: _yearsExperienceController,
               onChanged: (v) =>
                   _yearsExperience = int.tryParse(v) ?? 0,
             ),
@@ -1161,12 +1172,24 @@ class _AuthScreenState extends State<AuthScreen> {
                 GestureDetector(
                   onTap: () async {
                     setState(() => _isAiBioLoading = true);
-                    // Simulate AI bio generation
-                    await Future.delayed(
-                        const Duration(milliseconds: 800));
-                    _bioController.text =
-                        'Experienced local technician in Lahore with high customer rating. Punctual, honest, and quality work guaranteed.';
-                    setState(() => _isAiBioLoading = false);
+                    try {
+                      final categoryName = seededCategories
+                          .where((c) => c.id == _selectedCategoryId)
+                          .firstOrNull
+                          ?.nameEn ?? 'Services';
+                      final result = await AIService.generateBio(
+                        _bioController.text.isEmpty
+                            ? 'Local technician'
+                            : _bioController.text,
+                        categoryName,
+                      );
+                      if (!mounted) return;
+                      final newBio = result['bio'] as String? ?? '';
+                      if (newBio.isNotEmpty) _bioController.text = newBio;
+                    } catch (e) {
+                      debugPrint('AI bio generation failed: $e');
+                    }
+                    if (mounted) setState(() => _isAiBioLoading = false);
                   },
                   child: Row(
                     children: [

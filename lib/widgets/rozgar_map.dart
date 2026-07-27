@@ -40,7 +40,7 @@ class RozgarMap extends StatefulWidget {
   /// Provide an external controller for programmatic camera manipulation.
   final RozgarMapController? controller;
 
-  /// Fixed height. Defaults to 360.
+  /// Container height. Null = shrink-wrap to content.
   final double? height;
 
   /// Tile provider for OSM. Defaults to [CancellableNetworkTileProvider]
@@ -84,10 +84,11 @@ class _RozgarMapState extends State<RozgarMap> {
 
   @override
   void dispose() {
+    widget.controller?._detach();
     try {
       _gmapController?.dispose();
-    } catch (_) {
-      // Google Maps web plugin may not be fully initialized yet
+    } catch (e) {
+      debugPrint('Google Maps dispose error: $e');
     }
     super.dispose();
   }
@@ -119,6 +120,7 @@ class _RozgarMapState extends State<RozgarMap> {
       await _gmapController?.animateCamera(
         gmaps.CameraUpdate.newLatLngZoom(gmaps.LatLng(lat, lng), zoom),
       );
+      if (!mounted) return;
       _lastCenter = latlong2.LatLng(lat, lng);
       widget.onCameraMove?.call(lat, lng);
       widget.onCameraIdle?.call();
@@ -318,9 +320,19 @@ class RozgarMapController {
     _state = state;
   }
 
+  void _detach() {
+    _state = null;
+  }
+
+  void dispose() {
+    _detach();
+  }
+
   /// Move camera to [lat]/[lng] at [zoom].
   Future<void> animateTo(double lat, double lng, double zoom) async {
-    await _state?.animateTo(lat, lng, zoom);
+    final s = _state;
+    if (s == null || !s.mounted) return;
+    await s.animateTo(lat, lng, zoom);
   }
 
   /// Get current map center (works for both OSM and Google Maps).

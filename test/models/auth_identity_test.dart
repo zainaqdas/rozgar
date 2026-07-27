@@ -49,5 +49,23 @@ void main() {
       expect(identity.phoneNumber, isNull);
       expect(identity.email, isNull);
     });
+
+    test('fromJson handles null created_at without throwing', () {
+      final identity = AuthIdentity.fromJson({
+        'id': 'auth-2',
+        'created_at': null,
+      });
+      expect(identity.id, 'auth-2');
+      expect(identity.createdAt, isA<DateTime>());
+    });
+
+    test('fromJson handles malformed created_at without throwing', () {
+      final identity = AuthIdentity.fromJson({
+        'id': 'auth-3',
+        'created_at': 'not-a-date',
+      });
+      expect(identity.id, 'auth-3');
+      expect(identity.createdAt, isA<DateTime>());
+    });
   });
 }

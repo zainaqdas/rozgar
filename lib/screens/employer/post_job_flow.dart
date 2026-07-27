@@ -27,6 +27,7 @@ class _PostJobFlowState extends State<PostJobFlow> {
   int _step = 1; // 1-4
 
   final _descController = TextEditingController();
+  final _budgetController = TextEditingController(text: '0');
   bool _isAiParsing = false;
   bool _aiSuccess = false;
 
@@ -48,6 +49,7 @@ class _PostJobFlowState extends State<PostJobFlow> {
   @override
   void dispose() {
     _descController.dispose();
+    _budgetController.dispose();
     super.dispose();
   }
 
@@ -55,7 +57,14 @@ class _PostJobFlowState extends State<PostJobFlow> {
     if (_descController.text.trim().isEmpty) return;
     setState(() => _isAiParsing = true);
 
-    final summary = await AIService.parseJob(_descController.text);
+    Map<String, dynamic> summary;
+    try {
+      summary = await AIService.parseJob(_descController.text);
+    } catch (e) {
+      debugPrint('AI parse failed: $e');
+      if (mounted) setState(() => _isAiParsing = false);
+      return;
+    }
     final catMatch = seededCategories.where((c) =>
         c.nameEn.toLowerCase().contains((summary['category'] as String? ?? '').toLowerCase())).firstOrNull;
 
@@ -70,10 +79,11 @@ class _PostJobFlowState extends State<PostJobFlow> {
                   : JobUrgency.today;
         }
         if (summary['suggestedBudget'] != null) {
-          _budgetAmount = (summary['suggestedBudget'] as num).toDouble();
+          _budgetAmount = (summary['suggestedBudget'] as num?)?.toDouble() ?? 0;
+          _budgetController.text = _budgetAmount.toInt().toString();
         }
         if (summary['estimatedDuration'] != null) {
-          _estimatedDuration = (summary['estimatedDuration'] as num).toDouble();
+          _estimatedDuration = (summary['estimatedDuration'] as num?)?.toDouble() ?? 1;
         }
         if (summary['requiredSkills'] != null) {
           _requiredSkills = (summary['requiredSkills'] as List)
@@ -246,11 +256,14 @@ class _PostJobFlowState extends State<PostJobFlow> {
                     color: AppColors.teal600,
                   ),
                   const SizedBox(width: 8),
-                  Text(
-                    _isAiParsing
-                        ? AppTranslations.t('aiParsing', lang)
-                        : 'AI Extract & Pre-fill Details',
-                    style: const TextStyle(fontSize: 12),
+                  Flexible(
+                    child: Text(
+                      _isAiParsing
+                          ? AppTranslations.t('aiParsing', lang)
+                          : 'AI Extract & Pre-fill Details',
+                      style: const TextStyle(fontSize: 12),
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
                 ],
               ),
@@ -430,8 +443,7 @@ class _PostJobFlowState extends State<PostJobFlow> {
                 color: AppColors.teal700,
               ),
             ),
-            controller: TextEditingController(
-                text: _budgetAmount.toInt().toString()),
+            controller: _budgetController,
             onChanged: (v) =>
                 _budgetAmount = double.tryParse(v) ?? 0,
           ),

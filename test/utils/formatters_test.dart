@@ -13,6 +13,13 @@ void main() {
       expect(formatPkr(0), contains('0'));
     });
 
+    test('formats negative amounts with leading minus', () {
+      final result = formatPkr(-500);
+      expect(result, startsWith('-'));
+      expect(result, contains('Rs.'));
+      expect(result, contains('500'));
+    });
+
     test('formats large numbers', () {
       expect(formatPkr(100000), contains('Rs.'));
     });

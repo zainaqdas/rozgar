@@ -7,6 +7,9 @@ final _pkrFormat = NumberFormat.currency(
 );
 
 String formatPkr(double amount) {
+  if (amount < 0) {
+    return '-${_pkrFormat.format(amount.abs())}';
+  }
   return _pkrFormat.format(amount);
 }
 
@@ -22,6 +25,7 @@ String timeAgo(DateTime dateTime) {
   final now = DateTime.now();
   final diff = now.difference(dateTime);
 
+  if (diff.isNegative) return 'Just now';
   if (diff.inMinutes < 1) return 'Just now';
   if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
   if (diff.inHours < 24) return '${diff.inHours}h ago';

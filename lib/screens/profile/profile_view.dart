@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../providers/app_state.dart';
+import '../../services/ai_service.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/translations.dart';
 import '../../data/categories.dart';
@@ -78,21 +79,25 @@ class _ProfileViewState extends State<ProfileView> {
               onBioChanged: (v) => _bioController.text = v,
               onAiBio: () async {
                 setState(() => _isAiBioLoading = true);
-                seededCategories
-                        .where((c) =>
-                            c.id == details.categoryIds.firstOrNull)
-                        .firstOrNull
-                        ?.nameEn ??
-                    'Services';
-                await Future.delayed(
-                    const Duration(milliseconds: 800));
-                if (mounted) {
-                  final newBio =
-                      'Experienced local technician in Lahore with high customer rating. Punctual, honest, and quality work guaranteed.';
-                  _bioController.text = newBio;
-                  state.updateWorkerBio(newBio);
-                  setState(() => _isAiBioLoading = false);
+                try {
+                  final categoryName = seededCategories
+                      .where((c) => c.id == details.categoryIds.firstOrNull)
+                      .firstOrNull
+                      ?.nameEn ?? 'Services';
+                  final result = await AIService.generateBio(
+                    _bioController.text.isEmpty ? 'Local technician' : _bioController.text,
+                    categoryName,
+                  );
+                  if (!mounted) return;
+                  final newBio = result['bio'] as String? ?? '';
+                  if (newBio.isNotEmpty) {
+                    _bioController.text = newBio;
+                    state.updateWorkerBio(newBio);
+                  }
+                } catch (e) {
+                  debugPrint('AI bio generation failed: $e');
                 }
+                if (mounted) setState(() => _isAiBioLoading = false);
               },
             ),
             const SizedBox(height: 16),

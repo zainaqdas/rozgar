@@ -102,5 +102,75 @@ void main() {
       expect(restored.locationPoint?.lat, 31.5204);
       expect(restored.locationPoint?.address, 'Gulberg');
     });
+
+    test('fromJson handles malformed sent_at gracefully', () {
+      final json = {
+        'id': 'msg-bad-date',
+        'conversation_id': 'conv-1',
+        'sender_profile_id': 'p-1',
+        'content_type': 'text',
+        'content': 'hello',
+        'sent_at': 'not-a-date',
+        'read_at': null,
+        'media_url': null,
+        'audio_duration_sec': null,
+        'location_point': null,
+      };
+      final msg = Message.fromJson(json);
+      expect(msg.id, 'msg-bad-date');
+      expect(msg.sentAt, isA<DateTime>());
+    });
+
+    test('fromJson handles null sent_at gracefully', () {
+      final json = {
+        'id': 'msg-null-date',
+        'conversation_id': 'conv-1',
+        'sender_profile_id': 'p-1',
+        'content_type': 'text',
+        'content': 'hello',
+        'sent_at': null,
+        'read_at': null,
+        'media_url': null,
+        'audio_duration_sec': null,
+        'location_point': null,
+      };
+      final msg = Message.fromJson(json);
+      expect(msg.sentAt, isA<DateTime>());
+      expect(msg.readAt, isNull);
+    });
+
+    test('fromJson handles malformed read_at gracefully', () {
+      final json = {
+        'id': 'msg-bad-read',
+        'conversation_id': 'conv-1',
+        'sender_profile_id': 'p-1',
+        'content_type': 'text',
+        'content': 'hello',
+        'sent_at': '2025-01-01T00:00:00.000Z',
+        'read_at': 'garbage',
+        'media_url': null,
+        'audio_duration_sec': null,
+        'location_point': null,
+      };
+      final msg = Message.fromJson(json);
+      expect(msg.readAt, isNull);
+    });
+
+    test('fromJson handles audio_duration_sec as double', () {
+      final json = {
+        'id': 'msg-dbl',
+        'conversation_id': 'conv-1',
+        'sender_profile_id': 'p-1',
+        'content_type': 'voice',
+        'content': '',
+        'sent_at': '2025-01-01T00:00:00.000Z',
+        'read_at': null,
+        'media_url': null,
+        'audio_duration_sec': 12.0,
+        'location_point': null,
+      };
+      final msg = Message.fromJson(json);
+      expect(msg.audioDurationSec, 12);
+    });
   });
 }

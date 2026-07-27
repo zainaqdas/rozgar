@@ -31,6 +31,12 @@ class _NearbyWorkersMapState extends State<NearbyWorkersMap> {
   final RozgarMapController _mapController = RozgarMapController();
   bool _isLocating = false;
 
+  @override
+  void dispose() {
+    _mapController.dispose();
+    super.dispose();
+  }
+
   List<WorkerEntry> _getFilteredWorkers(AppState state) {
     return state.allWorkers.where((w) {
       if (!w.details.isOnlineForMap) return false;
@@ -47,6 +53,7 @@ class _NearbyWorkersMapState extends State<NearbyWorkersMap> {
       bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) {
         await Geolocator.openLocationSettings();
+        if (!mounted) return;
         setState(() => _isLocating = false);
         return;
       }
@@ -54,6 +61,7 @@ class _NearbyWorkersMapState extends State<NearbyWorkersMap> {
       if (permission == LocationPermission.denied) {
         permission = await Geolocator.requestPermission();
         if (permission == LocationPermission.denied) {
+          if (!mounted) return;
           setState(() => _isLocating = false);
           return;
         }
@@ -68,6 +76,7 @@ class _NearbyWorkersMapState extends State<NearbyWorkersMap> {
     } catch (e) {
       debugPrint('GPS error: $e');
     }
+    if (!mounted) return;
     setState(() => _isLocating = false);
   }
 

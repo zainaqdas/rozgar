@@ -1,15 +1,25 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
-import 'providers/app_state.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:hive_flutter/hive_flutter.dart';
+import 'providers/providers.dart';
 import 'theme/app_theme.dart';
 import 'utils/translations.dart';
 import 'services/supabase_config.dart';
 import 'services/map_service.dart';
-import 'app.dart';
+import 'services/push_service.dart';
+import 'services/sync_service.dart';
+import 'app_router.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  FlutterError.onError = (details) {
+    FlutterError.presentError(details);
+    debugPrint('FATAL: ${details.exception}\n${details.stack}');
+  };
+
   SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
   ]);
@@ -22,43 +32,46 @@ void main() async {
     ),
   );
 
-  // Initialize Supabase backend
+  await Hive.initFlutter();
+  await SyncService.instance.initialize();
   await SupabaseConfig.initialize();
 
-  // Enable Google Maps
   MapService.instance.setUseGoogleMaps();
 
-  runApp(const RozgarApp());
+  PushService.instance.initialize();
+
+  runApp(const ProviderScope(child: RozgarApp()));
 }
 
-class RozgarApp extends StatefulWidget {
+class RozgarApp extends ConsumerStatefulWidget {
   const RozgarApp({super.key});
 
   @override
-  State<RozgarApp> createState() => _RozgarAppState();
+  ConsumerState<RozgarApp> createState() => _RozgarAppState();
 }
 
-class _RozgarAppState extends State<RozgarApp> {
-  final AppState _appState = AppState();
+class _RozgarAppState extends ConsumerState<RozgarApp> {
   bool _isLoading = true;
 
   @override
   void initState() {
     super.initState();
-    _initializeAppState();
+    // Defer to a microtask so provider reads don't fire during the
+    // mount/build phase. On web (DDC) a synchronous ref.read() here
+    // triggers ChangeNotifier creation + notifyListeners() before the
+    // first frame completes, causing the "!_dirty" assertion.
+    Future.microtask(_initialize);
   }
 
-  Future<void> _initializeAppState() async {
-    await _appState.initialize();
+  Future<void> _initialize() async {
+    try {
+      await ref.read(appStateProvider.notifier).initialize();
+    } catch (e) {
+      debugPrint('App initialization failed: $e');
+    }
     if (mounted) {
       setState(() => _isLoading = false);
     }
-  }
-
-  @override
-  void dispose() {
-    _appState.dispose();
-    super.dispose();
   }
 
   @override
@@ -71,33 +84,30 @@ class _RozgarAppState extends State<RozgarApp> {
       );
     }
 
-    return ListenableBuilder(
-      listenable: _appState,
-      builder: (context, _) {
-        return MaterialApp(
-          title: 'Rozgar - Local Services Marketplace',
-          debugShowCheckedModeBanner: false,
-          theme: AppTheme.lightTheme,
-          locale: _appState.language == LanguageOption.ur
-              ? const Locale('ur', 'PK')
-              : const Locale('en', 'US'),
-          supportedLocales: const [
-            Locale('en', 'US'),
-            Locale('ur', 'PK'),
-          ],
-          localizationsDelegates: const [
-            GlobalMaterialLocalizations.delegate,
-            GlobalWidgetsLocalizations.delegate,
-            GlobalCupertinoLocalizations.delegate,
-          ],
-          home: RozgarShell(appState: _appState),
-        );
-      },
+    final appState = ref.watch(appStateProvider);
+    final router = ref.watch(routerProvider);
+
+    return MaterialApp.router(
+      title: 'Rozgar - Local Services Marketplace',
+      debugShowCheckedModeBanner: false,
+      theme: AppTheme.lightTheme,
+      locale: appState.language == LanguageOption.ur
+          ? const Locale('ur', 'PK')
+          : const Locale('en', 'US'),
+      supportedLocales: const [
+        Locale('en', 'US'),
+        Locale('ur', 'PK'),
+      ],
+      localizationsDelegates: const [
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
+      routerConfig: router,
     );
   }
 }
 
-/// Brief splash while data loads from Supabase.
 class _SplashLoader extends StatelessWidget {
   const _SplashLoader();
 

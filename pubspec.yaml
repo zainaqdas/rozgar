@@ -15,8 +15,11 @@ dependencies:
   cupertino_icons: ^1.0.8
 
   # State Management
-  # State Management (using ChangeNotifier + ListenableBuilder)
+  flutter_riverpod: ^2.6.1
   provider: ^6.1.2
+
+  # Navigation
+  go_router: ^14.8.0
 
   # Backend
   supabase_flutter: ^2.8.4
@@ -38,10 +41,25 @@ dependencies:
   shared_preferences: ^2.3.5
   flutter_map_cancellable_tile_provider: ^3.0.2
 
+  # Push Notifications
+  firebase_core: ^3.12.1
+  firebase_messaging: ^15.2.5
+  flutter_local_notifications: ^18.0.1
+
+  # Storage & Media
+  image_picker: ^1.1.2
+  file_picker: ^8.1.6
+
+  # Offline / Connectivity
+  hive: ^2.2.3
+  hive_flutter: ^1.1.0
+  connectivity_plus: ^6.1.2
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
+  mocktail: ^1.0.4
 
 flutter:
   uses-material-design: true

@@ -1,4 +1,5 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'config.dart';
 
 /// Supabase configuration for Rozgar.
 ///
@@ -10,19 +11,26 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 class SupabaseConfig {
   SupabaseConfig._();
 
-  static const String _supabaseUrl = 'https://hjnhudboyjkagicosrba.supabase.co';
-  static const String _supabaseAnonKey =
-      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imhqbmh1ZGJveWprYWdpY29zcmJhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ5OTE1NDksImV4cCI6MjEwMDU2NzU0OX0.sZSX5ciEA8VfBi_ARU6zY7DYPlEcPmJBT0SIXuwGIAs';
+  static final String _supabaseUrl = AppConfig.supabaseUrl;
+  static final String _supabaseAnonKey = AppConfig.supabaseAnonKey;
 
-  static bool _initialized = false;
+  static Future<void>? _initFuture;
 
   /// Initialize the Supabase client. Must be called before `runApp`.
+  /// Concurrent calls share a single underlying init future (no race).
+  /// Throws [StateError] if required config is missing.
   static Future<void> initialize() async {
-    if (_initialized) return;      await Supabase.initialize(
+    AppConfig.validate();
+    _initFuture ??= Supabase.initialize(
       url: _supabaseUrl,
       publishableKey: _supabaseAnonKey,
     );
-    _initialized = true;
+    try {
+      await _initFuture!;
+    } catch (e) {
+      _initFuture = null;
+      rethrow;
+    }
   }
 
   /// The singleton Supabase client.

@@ -48,7 +48,8 @@ class Application {
         jobId: json['job_id'] as String,
         workerProfileId: json['worker_profile_id'] as String,
         status: _parseStatus(json['status']),
-        appliedAt: DateTime.parse(json['applied_at'] as String),
+        appliedAt: DateTime.tryParse(json['applied_at'] as String? ?? '') ??
+            DateTime.now(),
         message: json['message'] as String?,
         aiMatchNote: json['ai_match_note'] as String?,
       );
