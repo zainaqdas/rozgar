@@ -59,7 +59,7 @@ class WorkerHome extends StatelessWidget {
     );
 
     return RefreshIndicator(
-      onRefresh: () => Future.delayed(const Duration(milliseconds: 600), () => appState.refresh()),
+      onRefresh: () => appState.refreshFromSupabase(),
       color: AppColors.teal600,
       backgroundColor: Colors.white,
       child: SingleChildScrollView(

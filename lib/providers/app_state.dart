@@ -893,6 +893,40 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Re-fetch data from Supabase (real pull-to-refresh).
+  Future<void> refreshFromSupabase() async {
+    if (!_isSupabaseAvailable || _activeProfileId == null) {
+      refresh();
+      return;
+    }
+    try {
+      final profileId = _activeProfileId!;
+      final isEmployer = activeProfileType == ProfileType.employer;
+
+      if (isEmployer) {
+        _jobs = await _supabase.getEmployerJobs(profileId);
+        final allJobIds = _jobs.map((j) => j.id).toSet();
+        _applications = [];
+        for (final jobId in allJobIds) {
+          final jobApps = await _supabase.getApplicationsForJob(jobId);
+          _applications.addAll(jobApps);
+        }
+      } else {
+        _jobs = await _supabase.getAllJobs();
+        _applications = await _supabase.getApplicationsForWorker(profileId);
+      }
+
+      _conversations = await _supabase.getConversations(profileId);
+      _notifications = await _supabase.getNotifications(profileId);
+      await _loadAllWorkersFromSupabase();
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Refresh failed: $e');
+      _lastOperationError = 'Refresh failed';
+      notifyListeners();
+    }
+  }
+
   void markNotificationsRead() {
     _notifications =
         _notifications.map((n) => n.copyWith(isRead: true)).toList();
