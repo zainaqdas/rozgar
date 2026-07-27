@@ -25,8 +25,31 @@ class WorkerHome extends StatelessWidget {
   Widget build(BuildContext context) {
     final lang = appState.language;
     final details = appState.workerDetails;
-    final workerLoc = details?.currentLocation ??
-        const LocationPoint(lat: 31.522, lng: 74.356, address: 'Liberty Market, Lahore');
+    final workerLoc = details?.currentLocation;
+    if (workerLoc == null) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.location_off, size: 48, color: AppColors.slate300),
+              SizedBox(height: 16),
+              Text(
+                'Location not set',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.slate700),
+              ),
+              SizedBox(height: 8),
+              Text(
+                'Update your profile location to see nearby jobs.',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 13, color: AppColors.slate500),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
     final radiusKm = details?.notificationRadiusKm ?? 15;
     final categoryIds = details?.categoryIds ?? [];
     final nearbyJobs = appState.getJobsNearWorker(

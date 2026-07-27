@@ -7,6 +7,9 @@ import '../models/conversation.dart';
 import '../models/job.dart';
 import '../models/application.dart';
 import 'supabase_service.dart';
+import 'package:uuid/uuid.dart';
+
+const _uuid = Uuid();
 
 class QueuedOperation {
   final String id;
@@ -66,7 +69,7 @@ class SyncService {
 
   Future<void> enqueue(String type, Map<String, dynamic> payload) async {
     final op = QueuedOperation(
-      id: 'op-${DateTime.now().millisecondsSinceEpoch}',
+      id: 'op-${_uuid.v4()}',
       type: type,
       payload: payload,
       createdAt: DateTime.now(),

@@ -13,6 +13,9 @@ import '../services/supabase_config.dart';
 import '../utils/geo.dart';
 import '../utils/translations.dart';
 import '../utils/sanitize.dart';
+import 'package:uuid/uuid.dart';
+
+const _uuid = Uuid();
 
 // ========== WORKER ENTRY ==========
 
@@ -525,7 +528,7 @@ class AppState extends ChangeNotifier {
   }) {
     final safeTitle = sanitizeInput(title);
     final safeDescription = sanitizeInput(description);
-    final jobId = 'job-${DateTime.now().millisecondsSinceEpoch}';
+    final jobId = 'job-${_uuid.v4()}';
     final job = Job(
       id: jobId,
       employerProfileId: employerProfileId,
@@ -554,7 +557,7 @@ class AppState extends ChangeNotifier {
           );
           if (dist <= worker.details.notificationRadiusKm) {
             await _supabase.createNotification(NotificationItem(
-            id: 'notif-${DateTime.now().millisecondsSinceEpoch}-$i',
+            id: 'notif-${_uuid.v4()}',
             profileId: worker.profile.id,
             type: NotificationType.newJobRadius,
             titleEn: 'New Job Available Near You!',
@@ -605,7 +608,7 @@ class AppState extends ChangeNotifier {
 
     final safeMessage = message != null ? sanitizeInput(message) : null;
     final app = Application(
-      id: 'app-${DateTime.now().millisecondsSinceEpoch}',
+      id: 'app-${_uuid.v4()}',
       jobId: jobId,
       workerProfileId: _workerProfile!.id,
       status: ApplicationStatus.interested,
@@ -620,7 +623,7 @@ class AppState extends ChangeNotifier {
     if (job != null) {
       // Notify the employer
       final notif = NotificationItem(
-        id: 'notif-${DateTime.now().millisecondsSinceEpoch}',
+        id: 'notif-${_uuid.v4()}',
         profileId: job.employerProfileId,
         type: NotificationType.workerInterested,
         titleEn: 'Worker Interested in your Job',
@@ -679,7 +682,7 @@ class AppState extends ChangeNotifier {
       _createConversationInSupabase(jobId, workerProfileId);
       
       final notif = NotificationItem(
-        id: 'notif-${DateTime.now().millisecondsSinceEpoch}',
+        id: 'notif-${_uuid.v4()}',
         profileId: workerProfileId,
         type: NotificationType.jobHired,
         titleEn: 'You are Hired!',
@@ -754,7 +757,7 @@ class AppState extends ChangeNotifier {
 
     if (_employerProfile == null) {
       return Conversation(
-        id: 'conv-error-${DateTime.now().millisecondsSinceEpoch}',
+        id: 'conv-error-${_uuid.v4()}',
         jobId: jobId,
         employerProfileId: '',
         workerProfileId: workerProfileId,
@@ -762,7 +765,7 @@ class AppState extends ChangeNotifier {
     }
 
     final conv = Conversation(
-      id: 'conv-${DateTime.now().millisecondsSinceEpoch}-$workerProfileId',
+      id: 'conv-${_uuid.v4()}',
       jobId: jobId,
       employerProfileId: _employerProfile!.id,
       workerProfileId: workerProfileId,
@@ -791,7 +794,7 @@ class AppState extends ChangeNotifier {
 
     final safeContent = sanitizeInput(content);
     final msg = Message(
-      id: 'msg-${DateTime.now().millisecondsSinceEpoch}',
+      id: 'msg-${_uuid.v4()}',
       conversationId: conversationId,
       senderProfileId: activeProfile!.id,
       contentType: contentType,
@@ -828,7 +831,7 @@ class AppState extends ChangeNotifier {
       String jobId, String revieweeProfileId, int rating, String comment) {
     if (activeProfile == null) return;
     final review = Review(
-      id: 'rev-${DateTime.now().millisecondsSinceEpoch}',
+      id: 'rev-${_uuid.v4()}',
       jobId: jobId,
       reviewerProfileId: activeProfile!.id,
       revieweeProfileId: revieweeProfileId,

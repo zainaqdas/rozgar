@@ -8,6 +8,9 @@ import '../services/supabase_service.dart';
 import '../providers/app_state.dart' show WorkerEntry;
 import '../utils/geo.dart';
 import '../utils/sanitize.dart';
+import 'package:uuid/uuid.dart';
+
+const _uuid = Uuid();
 
 class JobNotifier extends ChangeNotifier {
   final SupabaseService _supabase = SupabaseService.instance;
@@ -50,7 +53,7 @@ class JobNotifier extends ChangeNotifier {
   }) {
     final safeTitle = sanitizeInput(title);
     final safeDescription = sanitizeInput(description);
-    final jobId = 'job-${DateTime.now().millisecondsSinceEpoch}';
+    final jobId = 'job-${_uuid.v4()}';
     final job = Job(
       id: jobId,
       employerProfileId: employerProfileId,
@@ -79,7 +82,7 @@ class JobNotifier extends ChangeNotifier {
         );
         if (dist <= worker.details.notificationRadiusKm) {
           final notif = NotificationItem(
-            id: 'notif-${DateTime.now().millisecondsSinceEpoch}',
+            id: 'notif-${_uuid.v4()}',
             profileId: worker.profile.id,
             type: NotificationType.newJobRadius,
             titleEn: 'New Job Available Near You!',
@@ -138,7 +141,7 @@ class JobNotifier extends ChangeNotifier {
     if (alreadyApplied) return;
     final safeMessage = sanitizeInput(message);
     final app = Application(
-      id: 'app-${DateTime.now().millisecondsSinceEpoch}',
+      id: 'app-${_uuid.v4()}',
       jobId: jobId,
       workerProfileId: workerProfileId,
       status: ApplicationStatus.interested,
@@ -151,7 +154,7 @@ class JobNotifier extends ChangeNotifier {
     final job = _jobs.where((j) => j.id == jobId).firstOrNull;
     if (job != null) {
       final notif = NotificationItem(
-        id: 'notif-${DateTime.now().millisecondsSinceEpoch}',
+        id: 'notif-${_uuid.v4()}',
         profileId: job.employerProfileId,
         type: NotificationType.workerInterested,
         titleEn: 'Worker Interested in your Job',
@@ -206,7 +209,7 @@ class JobNotifier extends ChangeNotifier {
     final job = _jobs.where((j) => j.id == jobId).firstOrNull;
     if (job != null) {
       final notif = NotificationItem(
-        id: 'notif-${DateTime.now().millisecondsSinceEpoch}',
+        id: 'notif-${_uuid.v4()}',
         profileId: hiredWorkerProfileId,
         type: NotificationType.jobHired,
         titleEn: 'You are Hired!',

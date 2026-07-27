@@ -7,6 +7,7 @@ import 'providers/providers.dart';
 import 'theme/app_theme.dart';
 import 'utils/translations.dart';
 import 'services/supabase_config.dart';
+import 'services/config.dart';
 import 'services/map_service.dart';
 import 'services/push_service.dart';
 import 'services/sync_service.dart';
@@ -36,7 +37,9 @@ void main() async {
   await SyncService.instance.initialize();
   await SupabaseConfig.initialize();
 
-  MapService.instance.setUseGoogleMaps();
+  if (AppConfig.googleMapsApiKey.isNotEmpty) {
+    MapService.instance.setUseGoogleMaps();
+  }
 
   PushService.instance.initialize();
 

@@ -3,6 +3,9 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/conversation.dart';
 import '../services/supabase_service.dart';
 import '../utils/sanitize.dart';
+import 'package:uuid/uuid.dart';
+
+const _uuid = Uuid();
 
 class ChatNotifier extends ChangeNotifier {
   final SupabaseService _supabase = SupabaseService.instance;
@@ -42,7 +45,7 @@ class ChatNotifier extends ChangeNotifier {
   }) {
     final safeContent = sanitizeInput(content);
     final msg = Message(
-      id: 'msg-${DateTime.now().millisecondsSinceEpoch}',
+      id: 'msg-${_uuid.v4()}',
       conversationId: conversationId,
       senderProfileId: senderProfileId,
       contentType: contentType,
@@ -82,7 +85,7 @@ class ChatNotifier extends ChangeNotifier {
     if (existing != null) return existing;
 
     final conv = Conversation(
-      id: 'conv-${DateTime.now().millisecondsSinceEpoch}',
+      id: 'conv-${_uuid.v4()}',
       jobId: jobId,
       employerProfileId: employerProfileId,
       workerProfileId: workerProfileId,
