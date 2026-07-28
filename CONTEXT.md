@@ -166,6 +166,84 @@ Address all 12 risks/areas for improvement identified in the codebase analysis.
 
 ---
 
+## Session 20 — Feature Implementation (2026-07-29)
+
+### Goal
+Implement the top-priority features identified after the remediation plan:
+wire up the PostGIS RPC in the map screen, and replace mock phone auth
+with real Supabase OTP.
+
+### Step 1 — Wire up PostGIS nearby_workers RPC in map screen
+
+| Change | Detail |
+|--------|--------|
+| New model | `lib/models/nearby_worker.dart` — typed RPC result with lat/lng/photo |
+| Migration | `20240805000000_nearby_workers_add_latlng.sql` — updates `nearby_workers` RPC to return `lat`, `lng`, `profile_photo_url` (needed for map markers) |
+| SupabaseService | `getNearbyWorkers()` returns `List<NearbyWorker>` with PostGIS RPC + client-side Haversine fallback |
+| Map screen | `nearby_workers_map.dart` rewritten: calls `getNearbyWorkers()` on init and category filter change instead of loading ALL workers and filtering client-side. Adds loading/error/retry states. |
+
+**Commit**: a931677
+
+### Step 2 — Real phone auth via Supabase OTP
+
+| Change | Detail |
+|--------|--------|
+| SupabaseService | Added `signInWithPhoneOtp()` and `verifyPhoneOtp()` using `supabase.auth.signInWithOtp` / `verifyOTP` (OtpType.sms) |
+| AuthNotifier | Replaced mock `loginWithPhoneOrEmail`/`verifyOtp` with real async `sendPhoneOtp`/`verifyPhoneOtp` methods that create a real Supabase session and check onboarding status |
+| AuthScreen | Both callers updated to async flow with loading state and error surfacing (send OTP at step 0, verify at step 1) |
+| Tests | `auth_provider_test.dart` rewritten for new API surface |
+
+**Commit**: 65a760c
+
+### Verification
+- `flutter analyze`: 0 issues
+- `flutter test`: 222 passing, 4 skipped (integration — no Supabase config)
+- Git: clean working tree, all pushed to origin/main
+
+---
+
+## Future Roadmap
+
+### Step 3 — Firebase Configuration (BLOCKED — needs user action)
+- **Status**: Requires manual step in Firebase console
+- **What's needed**: Create a Firebase project, then download:
+  - `android/app/google-services.json` (Android)
+  - `ios/Runner/GoogleService-Info.plist` (iOS)
+- **Impact**: Without these, push notifications crash on real devices (`Firebase.initializeApp()` fails)
+- **Once provided**: Wire up `firebase_options.dart`, verify PushService initializes on Android/iOS
+
+### Step 4 — Run Integration Smoke Test Against Real Supabase
+- **Status**: Scaffold exists (`test/integration/smoke_test.dart`), never run with real credentials
+- **What's needed**: `SUPABASE_URL` and `SUPABASE_ANON_KEY` passed via `--dart-define`
+- **Command**: `flutter test --tags integration --dart-define=SUPABASE_URL=... --dart-define=SUPABASE_ANON_KEY=...`
+- **Validates**: Full stack — auth, jobs, workers, pagination
+
+### Step 5 — Dead-Letter UI
+- **Status**: SyncService has `getDeadLetterOperations()` / `retryDeadLetter()` / `clearDeadLetter()` APIs but nothing surfaces them to the user
+- **Plan**: Add a debug/settings screen showing failed sync operations with retry/dismiss buttons
+- **Effort**: ~1 hr, low risk
+
+### Step 6 — Supabase Phone Provider Configuration
+- **Status**: Phone OTP code is implemented (Step 2) but requires Supabase project to have phone auth enabled
+- **What's needed**: Enable phone provider in Supabase dashboard → Authentication → Providers → Phone
+- **For Pakistan**: Configure Twilio or MessageBird as SMS provider with a Pakistani number
+
+### Longer-Term Goals
+| Goal | Detail | Priority |
+|------|--------|----------|
+| Worker availability toggle | Workers can set online/offline status from home screen | High |
+| Job expiry | Auto-expire open jobs after N days (cron or client check) | Medium |
+| Payment integration | JazzCash/EasyPaisa for in-app payments | Medium |
+| Push notification triggers | Server-side Edge Functions to send FCM on new job/application/message | High |
+| Image upload in chat | Wire StorageService.uploadChatMedia into ChatScreen UI | Medium |
+| Profile photo upload | Wire StorageService.uploadAvatar into ProfileView | Medium |
+| CNIC verification flow | Upload → pending → verified status with admin review | Low |
+| Analytics dashboard | Employer: job views, application rates. Worker: profile views, hire rate | Low |
+| Web PWA | Enable Firebase web config, test all flows on web | Low |
+| Localization completeness | Audit all hardcoded English strings, add Urdu translations | Medium |
+
+---
+
 ## Session History
 
 ### Session 17 (prior)
