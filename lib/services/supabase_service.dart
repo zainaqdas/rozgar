@@ -160,13 +160,17 @@ class SupabaseService {
   }
 
   /// Fetch all worker profiles with their details.
-  Future<List<({Profile profile, WorkerDetails details})>> getAllWorkers() async {
+  /// Supports pagination via [limit] and [offset] (default page size 50).
+  Future<List<({Profile profile, WorkerDetails details})>> getAllWorkers({
+    int limit = 50,
+    int offset = 0,
+  }) async {
     final profiles = await _client
         .from('profiles')
         .select()
         .eq('profile_type', 'worker')
         .eq('account_status', 'active')
-        .limit(100);
+        .range(offset, offset + limit - 1);
     final allDetails = await _client
         .from('worker_details')
         .select();
@@ -186,6 +190,72 @@ class SupabaseService {
       }
     }
     return result;
+  }
+
+  /// Fetch nearby workers using PostGIS ST_DWithin RPC.
+  /// Falls back to client-side Haversine if RPC fails.
+  Future<List<Map<String, dynamic>>> getNearbyWorkers({
+    required LocationPoint employerLocation,
+    required double radiusKm,
+    List<String> categoryIds = const [],
+  }) async {
+    try {
+      final response = await _client.rpc('nearby_workers', params: {
+        'p_lat': employerLocation.lat,
+        'p_lng': employerLocation.lng,
+        'p_radius_km': radiusKm,
+        'p_category_ids': categoryIds,
+      });
+      return (response as List)
+          .map((w) => Map<String, dynamic>.from(w as Map))
+          .toList();
+    } catch (e) {
+      debugPrint('nearby_workers RPC failed, falling back to client-side: $e');
+      return _getNearbyWorkersFallback(
+        employerLocation: employerLocation,
+        radiusKm: radiusKm,
+        categoryIds: categoryIds,
+      );
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> _getNearbyWorkersFallback({
+    required LocationPoint employerLocation,
+    required double radiusKm,
+    required List<String> categoryIds,
+  }) async {
+    final workers = await getAllWorkers(limit: 200);
+    return workers.where((w) {
+      final dist = calculateDistanceKm(
+        lat1: w.details.currentLocation.lat,
+        lng1: w.details.currentLocation.lng,
+        lat2: employerLocation.lat,
+        lng2: employerLocation.lng,
+      );
+      if (dist > radiusKm) return false;
+      if (categoryIds.isEmpty) return true;
+      return categoryIds.any(
+        (cat) => w.details.categoryIds.any(
+          (wc) => wc.contains(cat) || cat.contains(wc),
+        ),
+      );
+    }).map((w) {
+      final dist = calculateDistanceKm(
+        lat1: w.details.currentLocation.lat,
+        lng1: w.details.currentLocation.lng,
+        lat2: employerLocation.lat,
+        lng2: employerLocation.lng,
+      );
+      return <String, dynamic>{
+        'profile_id': w.profile.id,
+        'display_name': w.profile.displayName,
+        'category_ids': w.details.categoryIds,
+        'bio': w.details.bio,
+        'average_rating': w.details.averageRating,
+        'total_jobs_completed': w.details.totalJobsCompleted,
+        'distance_km': dist,
+      };
+    }).toList();
   }
 
   // ===========================================================================
@@ -218,12 +288,13 @@ class SupabaseService {
   }
 
   /// Fetch all jobs (newest first).
-  Future<List<Job>> getAllJobs() async {
+  /// Supports pagination via [limit] and [offset] (default page size 50).
+  Future<List<Job>> getAllJobs({int limit = 50, int offset = 0}) async {
     final response = await _client
         .from('jobs')
         .select()
         .order('created_at', ascending: false)
-        .limit(100);
+        .range(offset, offset + limit - 1);
     return response.map((j) => Job.fromJson(j)).toList();
   }
 
