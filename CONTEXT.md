@@ -14,9 +14,9 @@ and routing to 7 domain-specific providers + a Coordinator orchestration layer.
 
 ### Final State
 - **flutter analyze**: 0 issues
-- **flutter test**: 193/193 passing
+- **flutter test**: 208/208 passing
 - **AppState**: DELETED (lib/providers/app_state.dart removed)
-- **Commits this session**: 30+
+- **Commits this session**: 35+
 
 ---
 
@@ -41,10 +41,10 @@ and routing to 7 domain-specific providers + a Coordinator orchestration layer.
 
 ### Phase 3A — Coordinator Layer
 - Created `lib/providers/coordinator.dart` (206 lines)
-  - `initialize()` — loads profiles, jobs, applications, conversations, messages, notifications, workers from Supabase
-  - `hireWorker()` — coordinates JobNotifier + ChatNotifier + NotificationNotifier
-  - `refreshFromSupabase()` — re-fetches all data for active profile
-  - `logout()` — clears all 7 domain notifiers
+- `initialize()` — loads profiles, jobs, applications, conversations, messages, notifications, workers from Supabase
+- `hireWorker()` — coordinates JobNotifier + ChatNotifier + NotificationNotifier
+- `refreshFromSupabase()` — re-fetches all data for active profile
+- `logout()` — clears all 7 domain notifiers
 - Registered `coordinatorProvider` in providers.dart
 - Wrote `test/providers/coordinator_test.dart` (9 tests)
 
@@ -82,10 +82,19 @@ param → `ConsumerStatefulWidget`/`ConsumerWidget` with `ref.watch()`/`ref.read
 
 **WorkerEntry** class moved from app_state.dart → worker_provider.dart.
 
+### Domain Provider Tests (post-3C)
+6 new test files written to replace deleted app_state_test.dart coverage:
+- `test/providers/auth_provider_test.dart` — initial state, loginWithPhoneOrEmail, verifyOtp, logout
+- `test/providers/profile_provider_test.dart` — setProfiles, switchProfile, reviews, toggleWorkerOnline, updateWorkerRadius, clear
+- `test/providers/job_provider_test.dart` — setJobs, setApplications, getEmployerJobs, getJobsNearWorker, expressInterest, clear
+- `test/providers/chat_provider_test.dart` — setConversations, setMessages, getOrCreateConversation, sendMessage, clear
+- `test/providers/notification_provider_test.dart` — setNotifications, markNotificationsRead, clear
+- `test/providers/settings_provider_test.dart` — setLanguage, clear
+- `test/widget_test.dart` — rewritten to test domain provider defaults via ProviderContainer
+
 ---
 
 ### Architecture (Post-Refactoring)
-
 ```
 lib/providers/
 ├── auth_provider.dart        — AuthNotifier (sign-in, sign-up, OTP, logout)
@@ -93,26 +102,67 @@ lib/providers/
 ├── job_provider.dart         — JobNotifier (jobs, applications, express interest, hire)
 ├── chat_provider.dart        — ChatNotifier (conversations, messages, realtime)
 ├── notification_provider.dart — NotificationNotifier (notifications, realtime)
-├── worker_provider.dart      — WorkerNotifier (cached workers, public profiles)
+├── worker_provider.dart      — WorkerNotifier (cached workers, public profiles, WorkerEntry)
 ├── settings_provider.dart    — SettingsNotifier (language preference)
 ├── coordinator.dart          — Coordinator (init, cross-domain ops, refresh, logout)
-└── providers.dart            — Riverpod provider registrations
+└── providers.dart            — Riverpod provider registrations (no AppState)
 ```
 
 ### Verification
 - `flutter analyze`: 0 issues
-- `flutter test`: 193/193 passing
+- `flutter test`: 208/208 passing
 - All 16 screens + 2 widgets + router + main.dart use domain providers exclusively
 - No references to AppState remain in lib/ (only historical comments in coordinator.dart)
 
 ---
 
 ### Known Remaining Work
-1. **Supabase migrations** (6 untracked SQL files) — review and commit
-2. **Test coverage** — dropped from 237 → 193 after AppState deletion; domain provider tests needed
-3. **Coordinator tests** — expand coverage for hireWorker, refreshFromSupabase, logout
-4. **Smoke test** — run app on device with real Supabase end-to-end
-5. **Cleanup** — remove scratch files (qwen.md, run.sh, run_web.sh) if unwanted
+1. ~~Supabase migrations (6 untracked SQL files)~~ — committed (7caa90c)
+2. ~~Coordinator tests~~ — expanded in Session 19 (hireWorker, logout, refresh)
+3. ~~Smoke test~~ — scaffold added (test/integration/smoke_test.dart, tagged)
+4. ~~Cleanup~~ — scratch files gitignored in Session 19
+
+---
+
+## Session 19 — Remediation Plan (2026-07-29)
+
+### Goal
+Address all 12 risks/areas for improvement identified in the codebase analysis.
+
+### Phase 1 — Git Hygiene
+- Committed untracked test files (supabase_service_test.dart, sanitize_test.dart)
+- Added qwen.md, run.sh, run_web.sh to .gitignore
+- Pushed 30 commits to origin/main
+
+### Phase 2 — Code Correctness
+| Fix | Detail |
+|-----|--------|
+| SyncService retry/dead-letter | Max 3 attempts, dead-letter Hive box, retryDeadLetter/clearDeadLetter/getDeadLetterOperations APIs |
+| Chat-media bucket | Dedicated 'chat-media' Supabase Storage bucket (was incorrectly using portfolios). Migration: 20240804000000_chat_media_bucket.sql |
+| AuthNotifier cleanup | Removed dead callback-based signInWithEmail/signUpWithEmail (screens use signInSimple/signUpSimple) |
+
+### Phase 3 — Performance
+| Fix | Detail |
+|-----|--------|
+| PostGIS nearby_workers RPC | getNearbyWorkers() in SupabaseService — ST_DWithin with client-side Haversine fallback |
+| Pagination | getAllJobs/getAllWorkers now accept limit/offset (default page 50, was hardcoded 100) |
+
+### Phase 4 — Testing
+| Fix | Detail |
+|-----|--------|
+| Coordinator tests expanded | hireWorker (6 tests: status update, hired/rejected apps, other-job isolation, callback, non-existent job), logout (3 tests: all 7 notifiers cleared, notifies, error state), refreshFromSupabase (2 tests) |
+| Integration smoke test | test/integration/smoke_test.dart — tagged 'integration', skipped without SUPABASE_URL. Tests: config check, fetch jobs, fetch workers, pagination non-overlap |
+
+### Phase 5 — Infrastructure
+| Fix | Detail |
+|-----|--------|
+| GitHub Actions CI | .github/workflows/ci.yml — flutter analyze --fatal-infos + flutter test --coverage on push/PR to main |
+| Firebase-web decision | **Intentional skip.** PushService.initialize() returns early on kIsWeb because no FirebaseOptions are configured in web/index.html. To enable: (1) create Firebase web app in console, (2) add firebaseConfig to web/index.html, (3) remove the kIsWeb guard in PushService. This is deferred until web PWA is a priority — mobile (Android/iOS) is the primary target. |
+
+### Verification
+- `flutter analyze`: 0 issues
+- `flutter test`: 223 passing, 4 skipped (integration — no Supabase config)
+- All phases committed and pushed to origin/main
 
 ---
 
