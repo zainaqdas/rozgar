@@ -230,13 +230,21 @@ with real Supabase OTP.
 - Phone authentication enabled
 - Phone OTP flow (Step 2) is now fully operational end-to-end
 
+### Push Notification Triggers — DONE
+- All core events now create `NotificationItem` records that fire the DB trigger → `send-push` Edge Function → FCM:
+  - **New job posted** → notifies nearby workers within radius (`job_provider.dart`)
+  - **Worker expresses interest** → notifies employer (`job_provider.dart`)
+  - **Employer hires worker** → notifies worker + rejects other applicants (`job_provider.dart`)
+  - **New chat message** → notifies the other conversation participant (`chat_provider.dart`)
+- Pipeline: `createNotification()` → DB insert → `trg_push_on_notification` trigger → `send-push` Edge Function → FCM HTTP API → device
+- Verified: `flutter analyze` 0 issues, `flutter test` 222 passed / 4 skipped
+
 ### Longer-Term Goals
 | Goal | Detail | Priority |
 |------|--------|----------|
 | Worker availability toggle | Workers can set online/offline status from home screen | High |
 | Job expiry | Auto-expire open jobs after N days (cron or client check) | Medium |
 | Payment integration | JazzCash/EasyPaisa for in-app payments | Medium |
-| Push notification triggers | Server-side Edge Functions to send FCM on new job/application/message | High |
 | Image upload in chat | Wire StorageService.uploadChatMedia into ChatScreen UI | Medium |
 | Profile photo upload | Wire StorageService.uploadAvatar into ProfileView | Medium |
 | CNIC verification flow | Upload → pending → verified status with admin review | Low |
