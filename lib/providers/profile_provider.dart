@@ -189,6 +189,28 @@ class ProfileNotifier extends ChangeNotifier {
     notifyListeners();
   }
 
+  void addReview(
+    String jobId,
+    String revieweeProfileId,
+    int rating,
+    String comment,
+  ) {
+    final reviewerId = _activeProfileId;
+    if (reviewerId == null) return;
+    final review = Review(
+      id: 'rev-${DateTime.now().millisecondsSinceEpoch}',
+      jobId: jobId,
+      reviewerProfileId: reviewerId,
+      revieweeProfileId: revieweeProfileId,
+      rating: rating,
+      comment: sanitizeInput(comment),
+      createdAt: DateTime.now(),
+    );
+    _reviews.insert(0, review);
+    notifyListeners();
+    _fireAndForget('addReview', () => _supabase.createReview(review));
+  }
+
   void clear() {
     _employerProfile = null;
     _workerProfile = null;
