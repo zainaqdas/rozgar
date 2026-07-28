@@ -7,6 +7,14 @@ import 'notification_provider.dart';
 import 'worker_provider.dart';
 import 'settings_provider.dart';
 import 'coordinator.dart';
+import 'sync_status_provider.dart';
+
+final syncStatusProvider =
+    ChangeNotifierProvider<SyncStatusNotifier>((ref) {
+  final notifier = SyncStatusNotifier();
+  notifier.refresh();
+  return notifier;
+});
 
 final authProvider = ChangeNotifierProvider<AuthNotifier>((ref) {
   return AuthNotifier();

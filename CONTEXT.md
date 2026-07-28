@@ -14,9 +14,9 @@ and routing to 7 domain-specific providers + a Coordinator orchestration layer.
 
 ### Final State
 - **flutter analyze**: 0 issues
-- **flutter test**: 208/208 passing
-- **AppState**: DELETED (lib/providers/app_state.dart removed)
-- **Commits this session**: 35+
+- `flutter test`: 222/222 passing (4 skipped)
+- `AppState`: DELETED (lib/providers/app_state.dart removed)
+- Commits this session: 35+
 
 ---
 
@@ -204,13 +204,11 @@ with real Supabase OTP.
 
 ## Future Roadmap
 
-### Step 3 — Firebase Configuration (BLOCKED — needs user action)
-- **Status**: Requires manual step in Firebase console
-- **What's needed**: Create a Firebase project, then download:
-  - `android/app/google-services.json` (Android)
-  - `ios/Runner/GoogleService-Info.plist` (iOS)
-- **Impact**: Without these, push notifications crash on real devices (`Firebase.initializeApp()` fails)
-- **Once provided**: Wire up `firebase_options.dart`, verify PushService initializes on Android/iOS
+### Step 3 — Firebase Configuration — DONE (455bae0)
+- `android/app/google-services.json` added (project `rozgar-10e88`)
+- Package aligned to `com.rozgarapp.app` in build.gradle.kts
+- `com.google.gms.google-services` v4.4.2 plugin wired in settings + app gradle
+- Remaining: run `flutter build apk` to verify Gradle integration; add iOS `GoogleService-Info.plist` when iOS build is needed
 
 ### Step 4 — Run Integration Smoke Test Against Real Supabase
 - **Status**: Scaffold exists (`test/integration/smoke_test.dart`), never run with real credentials
@@ -218,15 +216,19 @@ with real Supabase OTP.
 - **Command**: `flutter test --tags integration --dart-define=SUPABASE_URL=... --dart-define=SUPABASE_ANON_KEY=...`
 - **Validates**: Full stack — auth, jobs, workers, pagination
 
-### Step 5 — Dead-Letter UI
-- **Status**: SyncService has `getDeadLetterOperations()` / `retryDeadLetter()` / `clearDeadLetter()` APIs but nothing surfaces them to the user
-- **Plan**: Add a debug/settings screen showing failed sync operations with retry/dismiss buttons
-- **Effort**: ~1 hr, low risk
+### Step 5 — Sync Status UI — DONE
+- `SyncStatusNotifier` (ChangeNotifier) wraps SyncService dead-letter APIs: `refresh()`, `retry(id)`, `retryAll()`, `dismiss(id)`, `dismissAll()`
+- `syncStatusProvider` registered in providers.dart (auto-refreshes on init)
+- `SyncStatusBanner` widget: persistent rose-colored banner above bottom nav showing failure count with Retry / Dismiss buttons + spinner during retry
+- `SyncService.removeDeadLetter(id)` added for per-item dismissal
+- Translations added (en + ur): `dismiss`, `syncFailedOne`, `syncFailedMany`
+- Wired into `AppShell` via `Column` wrapping `SyncStatusBanner` + `RozgarBottomNav`
+- Verification: `flutter analyze` 0 issues, `flutter test` 222 passed / 4 skipped
 
-### Step 6 — Supabase Phone Provider Configuration
-- **Status**: Phone OTP code is implemented (Step 2) but requires Supabase project to have phone auth enabled
-- **What's needed**: Enable phone provider in Supabase dashboard → Authentication → Providers → Phone
-- **For Pakistan**: Configure Twilio or MessageBird as SMS provider with a Pakistani number
+### Step 6 — Supabase Phone Provider Configuration — DONE
+- Twilio credentials configured in Supabase dashboard
+- Phone authentication enabled
+- Phone OTP flow (Step 2) is now fully operational end-to-end
 
 ### Longer-Term Goals
 | Goal | Detail | Priority |

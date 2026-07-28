@@ -18,6 +18,7 @@ import 'screens/settings/settings_screen.dart';
 import 'screens/rating/rating_modal.dart';
 import 'widgets/header.dart';
 import 'widgets/bottom_nav.dart';
+import 'widgets/sync_status_banner.dart';
 import 'theme/app_theme.dart';
 import 'app.dart' show AppView;
 
@@ -288,14 +289,20 @@ class AppShell extends ConsumerWidget {
           Expanded(child: child),
         ],
       ),
-      bottomNavigationBar: RozgarBottomNav(
-        activeTab: _activeTab ?? AppView.home,
-        tabs: bottomNavTabs,
-        onTabChange: (view) {
-          final path =
-              _viewToPath(view, ref.read(profileProvider).activeProfileType);
-          if (path != null) context.go(path);
-        },
+      bottomNavigationBar: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const SyncStatusBanner(),
+          RozgarBottomNav(
+            activeTab: _activeTab ?? AppView.home,
+            tabs: bottomNavTabs,
+            onTabChange: (view) {
+              final path =
+                  _viewToPath(view, ref.read(profileProvider).activeProfileType);
+              if (path != null) context.go(path);
+            },
+          ),
+        ],
       ),
     );
   }

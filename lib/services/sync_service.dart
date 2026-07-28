@@ -176,6 +176,12 @@ class SyncService {
     _processQueue();
   }
 
+  /// Removes a single dead-lettered operation permanently.
+  Future<void> removeDeadLetter(String id) async {
+    await _deadLetterBox?.delete(id);
+    debugPrint('SyncService: removed dead-letter $id');
+  }
+
   /// Clears all dead-lettered operations permanently.
   Future<void> clearDeadLetter() async {
     await _deadLetterBox?.clear();
