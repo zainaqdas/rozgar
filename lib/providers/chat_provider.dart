@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/conversation.dart';
+import '../models/notification_item.dart';
 import '../services/supabase_service.dart';
 import '../utils/sanitize.dart';
 import 'package:uuid/uuid.dart';
@@ -72,6 +73,33 @@ class ChatNotifier extends ChangeNotifier {
         lastMessageText: safeContent,
         lastMessageTime: msg.sentAt,
       );
+
+      // Notify the other conversation participant
+      final conv = _conversations.firstWhere(
+        (c) => c.id == conversationId,
+        orElse: () => throw Exception('Conversation not found'),
+      );
+      final recipientProfileId = conv.employerProfileId == senderProfileId
+          ? conv.workerProfileId
+          : conv.employerProfileId;
+
+      final notif = NotificationItem(
+        id: 'notif-${_uuid.v4()}',
+        profileId: recipientProfileId,
+        type: NotificationType.newMessage,
+        titleEn: 'New Message',
+        titleUr: 'نیا پیغام',
+        bodyEn: safeContent.length > 50
+            ? '${safeContent.substring(0, 50)}...'
+            : safeContent,
+        bodyUr: safeContent.length > 50
+            ? '${safeContent.substring(0, 50)}...'
+            : safeContent,
+        isRead: false,
+        createdAt: DateTime.now(),
+        payload: {'conversationId': conversationId},
+      );
+      await _supabase.createNotification(notif);
     });
   }
 
