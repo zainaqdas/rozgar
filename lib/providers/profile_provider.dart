@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import '../models/profile.dart';
 import '../models/location_point.dart';
+import '../models/review.dart';
 import '../services/supabase_service.dart';
 import '../utils/sanitize.dart';
 
@@ -11,12 +12,14 @@ class ProfileNotifier extends ChangeNotifier {
   Profile? _workerProfile;
   WorkerDetails? _workerDetails;
   String? _activeProfileId;
+  List<Review> _reviews = [];
   String? _lastOperationError;
 
   Profile? get employerProfile => _employerProfile;
   Profile? get workerProfile => _workerProfile;
   WorkerDetails? get workerDetails => _workerDetails;
   String? get activeProfileId => _activeProfileId;
+  List<Review> get reviews => List.unmodifiable(_reviews);
   String? get lastOperationError => _lastOperationError;
 
   Profile? get activeProfile {
@@ -181,11 +184,17 @@ class ProfileNotifier extends ChangeNotifier {
     });
   }
 
+  void setReviews(List<Review> reviews) {
+    _reviews = reviews;
+    notifyListeners();
+  }
+
   void clear() {
     _employerProfile = null;
     _workerProfile = null;
     _workerDetails = null;
     _activeProfileId = null;
+    _reviews = [];
     _lastOperationError = null;
     notifyListeners();
   }

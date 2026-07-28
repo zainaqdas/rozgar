@@ -95,6 +95,7 @@ class _RozgarAppState extends ConsumerState<RozgarApp> {
     ref.read(notificationProvider.notifier).setNotifications(appState.notifications);
     ref.read(workerProvider.notifier).setWorkers(appState.allWorkers);
     ref.read(settingsProvider.notifier).setLanguage(appState.language);
+    ref.read(profileProvider.notifier).setReviews(appState.reviews);
   }
 
   @override
