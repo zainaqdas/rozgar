@@ -239,14 +239,22 @@ with real Supabase OTP.
 - Pipeline: `createNotification()` → DB insert → `trg_push_on_notification` trigger → `send-push` Edge Function → FCM HTTP API → device
 - Verified: `flutter analyze` 0 issues, `flutter test` 222 passed / 4 skipped
 
+### Profile Photo Upload — DONE
+- `_ProfileHeaderCard` converted to `ConsumerWidget` with camera FAB on avatar
+- Opens `image_picker` (gallery, 512px max, 85% quality) → `StorageService.uploadAvatar()` → Supabase `avatars` bucket
+- `ProfileNotifier.updateProfilePhoto()` persists URL to `profiles.profile_photo_url`
+- Avatar displays `NetworkImage` when set, initial-letter fallback otherwise
+- Verified: `flutter analyze` 0 issues, `flutter test` 222 passed / 4 skipped
+
+### Previously Discovered as Already Implemented
+- **Worker availability toggle**: `_PresenceBanner` in `worker_home.dart` already has interactive Go Online/Offline button calling `toggleWorkerOnline()` → persists `is_online_for_map` to Supabase
+- **Image upload in chat**: `chat_screen.dart` already wires `image_picker` + `file_picker` → `StorageService.uploadChatMedia()` (lines 601–631)
+
 ### Longer-Term Goals
 | Goal | Detail | Priority |
 |------|--------|----------|
-| Worker availability toggle | Workers can set online/offline status from home screen | High |
 | Job expiry | Auto-expire open jobs after N days (cron or client check) | Medium |
 | Payment integration | JazzCash/EasyPaisa for in-app payments | Medium |
-| Image upload in chat | Wire StorageService.uploadChatMedia into ChatScreen UI | Medium |
-| Profile photo upload | Wire StorageService.uploadAvatar into ProfileView | Medium |
 | CNIC verification flow | Upload → pending → verified status with admin review | Low |
 | Analytics dashboard | Employer: job views, application rates. Worker: profile views, hire rate | Low |
 | Web PWA | Enable Firebase web config, test all flows on web | Low |
