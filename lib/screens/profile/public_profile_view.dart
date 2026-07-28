@@ -11,7 +11,7 @@ import '../../widgets/animations.dart';
 
 class PublicProfileView extends ConsumerWidget {
   final Profile profile;
-  final WorkerDetails workerDetails;
+  final WorkerDetails? workerDetails;
   final VoidCallback onBack;
   final ValueChanged<String> onOpenChat;
   final VoidCallback? onHire;
@@ -19,7 +19,7 @@ class PublicProfileView extends ConsumerWidget {
   const PublicProfileView({
     super.key,
     required this.profile,
-    required this.workerDetails,
+    this.workerDetails,
     required this.onBack,
     required this.onOpenChat,
     this.onHire,
@@ -28,10 +28,22 @@ class PublicProfileView extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final lang = ref.watch(settingsProvider).language;
+    final wd = workerDetails;
+    if (wd == null) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(32),
+          child: Text(
+            'Worker details not available.',
+            style: TextStyle(fontSize: 13, color: AppColors.slate500),
+          ),
+        ),
+      );
+    }
     final profileReviews = ref.watch(profileProvider).reviews
         .where((r) => r.revieweeProfileId == profile.id)
         .toList();
-    final categories = workerDetails.categoryIds
+    final categories = wd.categoryIds
         .map((id) => seededCategories.where((c) => c.id == id).firstOrNull)
         .where((c) => c != null)
         .cast<Category>()
@@ -126,10 +138,10 @@ class PublicProfileView extends ConsumerWidget {
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceAround,
                       children: [
-                        _StatItem(icon: Icons.star, value: workerDetails.averageRating.toString(), label: 'Rating', iconColor: AppColors.amber500),
-                        _StatItem(icon: Icons.work, value: '${workerDetails.totalJobsCompleted}', label: 'Jobs Done', iconColor: AppColors.teal600),
-                        _StatItem(icon: Icons.timer, value: '${workerDetails.responseTimeAvgMinutes}m', label: 'Response', iconColor: AppColors.teal600),
-                        _StatItem(icon: Icons.speed, value: '${workerDetails.yearsExperience}y', label: 'Exp', iconColor: AppColors.teal600),
+                        _StatItem(icon: Icons.star, value: wd.averageRating.toString(), label: 'Rating', iconColor: AppColors.amber500),
+                        _StatItem(icon: Icons.work, value: '${wd.totalJobsCompleted}', label: 'Jobs Done', iconColor: AppColors.teal600),
+                        _StatItem(icon: Icons.timer, value: '${wd.responseTimeAvgMinutes}m', label: 'Response', iconColor: AppColors.teal600),
+                        _StatItem(icon: Icons.speed, value: '${wd.yearsExperience}y', label: 'Exp', iconColor: AppColors.teal600),
                       ],
                     ),
                   ),
@@ -195,7 +207,7 @@ class PublicProfileView extends ConsumerWidget {
                 children: [
                   const Text('About', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: AppColors.slate800)),
                   const SizedBox(height: 8),
-                  Text(workerDetails.bio, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: AppColors.slate700, height: 1.6)),
+                  Text(wd.bio, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: AppColors.slate700, height: 1.6)),
                   const SizedBox(height: 12),
                   Row(
                     children: [
@@ -209,7 +221,7 @@ class PublicProfileView extends ConsumerWidget {
                     children: [
                       const Icon(Icons.monetization_on_outlined, size: 14, color: AppColors.teal600),
                       const SizedBox(width: 4),
-                      Text(workerDetails.rateNote, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: AppColors.slate600)),
+                      Text(wd.rateNote, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: AppColors.slate600)),
                     ],
                   ),
                 ],
@@ -219,7 +231,7 @@ class PublicProfileView extends ConsumerWidget {
           const SizedBox(height: 16),
 
           // Portfolio Section
-          if (workerDetails.portfolioMedia.isNotEmpty) ...[
+          if (wd.portfolioMedia.isNotEmpty) ...[
             FadeInSlide(
               index: 3,
               child: Container(
@@ -239,11 +251,11 @@ class PublicProfileView extends ConsumerWidget {
                       height: 100,
                       child: ListView.separated(
                         scrollDirection: Axis.horizontal,
-                        itemCount: workerDetails.portfolioMedia.length,
+                        itemCount: wd.portfolioMedia.length,
                         separatorBuilder: (_, _) => const SizedBox(width: 8),
                         itemBuilder: (_, i) => ClipRRect(
                           borderRadius: BorderRadius.circular(10),
-                          child: Image.network(workerDetails.portfolioMedia[i], width: 100, height: 100, fit: BoxFit.cover,
+                          child: Image.network(wd.portfolioMedia[i], width: 100, height: 100, fit: BoxFit.cover,
                               errorBuilder: (_, _, _) => Container(
                                   width: 100, height: 100, color: AppColors.slate100,
                                   child: const Icon(Icons.image, color: AppColors.slate400))),

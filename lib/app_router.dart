@@ -2,8 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'providers/providers.dart';
-import 'providers/app_state.dart';
-import 'models/job.dart';
 import 'models/profile.dart';
 import 'screens/auth/auth_screen.dart';
 import 'screens/employer/employer_home.dart';
@@ -24,20 +22,22 @@ import 'theme/app_theme.dart';
 import 'app.dart' show AppView;
 
 final routerProvider = Provider<GoRouter>((ref) {
-  final appState = ref.read(appStateProvider);
-  return _buildRouter(appState);
+  return _buildRouter(ref);
 });
 
 final GlobalKey<NavigatorState> _rootNavigatorKey =
     GlobalKey<NavigatorState>(debugLabel: 'root');
 
-GoRouter _buildRouter(AppState appState) {
+GoRouter _buildRouter(Ref ref) {
   return GoRouter(
     navigatorKey: _rootNavigatorKey,
     initialLocation: '/',
     debugLogDiagnostics: false,
-    redirect: _buildRedirect(appState),
-    refreshListenable: appState,
+    redirect: _buildRedirect(ref),
+    refreshListenable: Listenable.merge([
+      ref.read(authProvider.notifier),
+      ref.read(profileProvider.notifier),
+    ]),
     errorBuilder: (context, state) => Scaffold(
       appBar: AppBar(title: const Text('Not Found')),
       body: Center(
@@ -47,7 +47,7 @@ GoRouter _buildRouter(AppState appState) {
             const Text('Page not found'),
             const SizedBox(height: 12),
             ElevatedButton(
-              onPressed: () => context.go(_defaultHome(appState) ?? '/auth'),
+              onPressed: () => context.go(_defaultHome(ref) ?? '/auth'),
               child: const Text('Go Home'),
             ),
           ],
@@ -62,7 +62,7 @@ GoRouter _buildRouter(AppState appState) {
               int.tryParse(state.uri.queryParameters['step'] ?? '') ?? 0;
           return AuthScreen(
             onAuthComplete: () =>
-                context.go(_defaultHome(appState) ?? '/employer/home'),
+                context.go(_defaultHome(ref) ?? '/employer/home'),
             initialStep: step,
           );
         },
@@ -92,7 +92,7 @@ GoRouter _buildRouter(AppState appState) {
             path: '/employer/post-job',
             builder: (context, state) => PostJobFlow(
               onComplete: () =>
-                  context.go(_defaultHome(appState) ?? '/employer/home'),
+                  context.go(_defaultHome(ref) ?? '/employer/home'),
             ),
           ),
           GoRoute(
@@ -131,14 +131,18 @@ GoRouter _buildRouter(AppState appState) {
       ),
       GoRoute(
         path: '/job/:jobId',
-        parentNavigatorKey: _rootNavigatorKey,
         builder: (context, state) {
           final jobId = state.pathParameters['jobId'] ?? '';
-          final job = appState.jobs.where((j) => j.id == jobId).firstOrNull;
+          final job = ref
+              .read(jobProvider)
+              .jobs
+              .where((j) => j.id == jobId)
+              .firstOrNull;
           if (job == null) {
             return Scaffold(
               appBar: AppBar(title: const Text('Job not found')),
-              body: const Center(child: Text('This job could not be found.')),
+              body:
+                  const Center(child: Text('This job could not be found.')),
             );
           }
           return JobDetailView(
@@ -152,39 +156,9 @@ GoRouter _buildRouter(AppState appState) {
         path: '/notifications',
         parentNavigatorKey: _rootNavigatorKey,
         builder: (context, state) => NotificationsView(
-onBack: () => context.pop(),
-onOpenJobDetailsById: (jobId) => context.go('/job/$jobId'),
-),
-      ),
-      GoRoute(
-        path: '/u/:workerId',
-        parentNavigatorKey: _rootNavigatorKey,
-        builder: (context, state) {
-          final workerId = state.pathParameters['workerId'] ?? '';
-          final data = appState.getPublicProfile(workerId);
-          if (data == null || data.workerDetails == null) {
-            return Scaffold(
-              appBar: AppBar(title: const Text('Profile not found')),
-              body: const Center(
-                  child: Text('This profile could not be found.')),
-            );
-          }
-          return PublicProfileView(
-            profile: data.profile,
-            workerDetails: data.workerDetails!,
-            onBack: () => context.pop(),
-            onOpenChat: (wid) => context.go('/chat', extra: wid),
-            onHire: () {
-              final openJob = appState.jobs
-                  .where((j) => j.status == JobStatus.open)
-                  .firstOrNull;
-              if (openJob != null) {
-                appState.hireWorker(openJob.id, workerId);
-                context.go('/chat', extra: workerId);
-              }
-            },
-          );
-        },
+          onBack: () => context.pop(),
+          onOpenJobDetailsById: (jobId) => context.go('/job/$jobId'),
+        ),
       ),
       GoRoute(
         path: '/settings',
@@ -193,36 +167,62 @@ onOpenJobDetailsById: (jobId) => context.go('/job/$jobId'),
           onBack: () => context.pop(),
         ),
       ),
+      GoRoute(
+        path: '/u/:workerId',
+        builder: (context, state) {
+          final workerId = state.pathParameters['workerId'] ?? '';
+          final profile = ref.read(profileProvider);
+          final data = ref.read(workerProvider).getPublicProfile(
+                workerId,
+                profile.workerProfile,
+                profile.workerDetails,
+              );
+          if (data == null) {
+            return Scaffold(
+              appBar: AppBar(title: const Text('Profile not found')),
+              body: const Center(
+                  child: Text('This profile could not be found.')),
+            );
+          }
+          return PublicProfileView(
+            profile: data.profile,
+            workerDetails: data.workerDetails,
+            onBack: () => context.pop(),
+            onOpenChat: (id) => context.go('/chat', extra: id),
+          );
+        },
+      ),
     ],
   );
 }
 
-String? Function(BuildContext, GoRouterState) _buildRedirect(
-    AppState appState) {
+String? Function(BuildContext, GoRouterState) _buildRedirect(Ref ref) {
   return (context, state) {
-    final isLoggedIn = appState.authIdentity != null;
+    final auth = ref.read(authProvider);
+    final isLoggedIn = auth.authIdentity != null;
     final isOnAuth = state.matchedLocation == '/auth';
 
     if (!isLoggedIn && !isOnAuth) return '/auth';
 
     // Needs onboarding → force to profile creation (unless already there)
-    if (isLoggedIn && appState.needsOnboarding) {
+    if (isLoggedIn && auth.needsOnboarding) {
       if (isOnAuth && state.uri.queryParameters['step'] == '2') return null;
       return '/auth?step=2';
     }
 
     // Onboarding done, still on auth → go home
-    if (isLoggedIn && isOnAuth) return _defaultHome(appState);
+    if (isLoggedIn && isOnAuth) return _defaultHome(ref);
 
     // On root → go home
-    if (isLoggedIn && state.matchedLocation == '/') return _defaultHome(appState);
+    if (isLoggedIn && state.matchedLocation == '/') return _defaultHome(ref);
 
     return null;
   };
 }
 
-String? _defaultHome(AppState state) {
-  if (state.activeProfileType == ProfileType.employer) {
+String? _defaultHome(Ref ref) {
+  final profile = ref.read(profileProvider);
+  if (profile.activeProfileType == ProfileType.employer) {
     return '/employer/home';
   }
   return '/worker/home';
@@ -292,7 +292,8 @@ class AppShell extends ConsumerWidget {
         activeTab: _activeTab ?? AppView.home,
         tabs: bottomNavTabs,
         onTabChange: (view) {
-          final path = _viewToPath(view, ref.read(profileProvider).activeProfileType);
+          final path =
+              _viewToPath(view, ref.read(profileProvider).activeProfileType);
           if (path != null) context.go(path);
         },
       ),
