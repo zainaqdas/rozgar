@@ -146,7 +146,6 @@ GoRouter _buildRouter(AppState appState) {
             );
           }
           return JobDetailView(
-            appState: appState,
             job: job,
             onBack: () => context.pop(),
             onOpenChat: (workerId) => context.go('/chat', extra: workerId),
