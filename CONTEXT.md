@@ -246,6 +246,12 @@ with real Supabase OTP.
 - Avatar displays `NetworkImage` when set, initial-letter fallback otherwise
 - Verified: `flutter analyze` 0 issues, `flutter test` 222 passed / 4 skipped
 
+### Job Expiry — DONE
+- `JobNotifier.setJobs()` now auto-expires open jobs older than 14 days (`expiryDays` constant)
+- Expired jobs marked `JobStatus.expired` locally + persisted to Supabase via `updateJobStatus()` fire-and-forget
+- Runs on every job load (init, pull-to-refresh, profile switch)
+- Verified: `flutter analyze` 0 issues, `flutter test` 222 passed / 4 skipped
+
 ### Previously Discovered as Already Implemented
 - **Worker availability toggle**: `_PresenceBanner` in `worker_home.dart` already has interactive Go Online/Offline button calling `toggleWorkerOnline()` → persists `is_online_for_map` to Supabase
 - **Image upload in chat**: `chat_screen.dart` already wires `image_picker` + `file_picker` → `StorageService.uploadChatMedia()` (lines 601–631)
@@ -253,7 +259,6 @@ with real Supabase OTP.
 ### Longer-Term Goals
 | Goal | Detail | Priority |
 |------|--------|----------|
-| Job expiry | Auto-expire open jobs after N days (cron or client check) | Medium |
 | Payment integration | JazzCash/EasyPaisa for in-app payments | Medium |
 | CNIC verification flow | Upload → pending → verified status with admin review | Low |
 | Analytics dashboard | Employer: job views, application rates. Worker: profile views, hire rate | Low |
