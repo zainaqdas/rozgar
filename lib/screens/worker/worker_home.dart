@@ -1,30 +1,30 @@
 import 'package:flutter/material.dart';
-import '../../providers/app_state.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../providers/providers.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/translations.dart';
 import '../../utils/formatters.dart';
 import '../../utils/geo.dart';
 import '../../models/job.dart';
-import '../../models/location_point.dart';
 import '../../widgets/animations.dart';
 import '../../widgets/error_states.dart';
 
-class WorkerHome extends StatelessWidget {
-  final AppState appState;
+class WorkerHome extends ConsumerWidget {
   final ValueChanged<Job> onOpenJobDetails;
   final VoidCallback onOpenMapClick;
 
   const WorkerHome({
     super.key,
-    required this.appState,
     required this.onOpenJobDetails,
     required this.onOpenMapClick,
   });
 
   @override
-  Widget build(BuildContext context) {
-    final lang = appState.language;
-    final details = appState.workerDetails;
+  Widget build(BuildContext context, WidgetRef ref) {
+    final lang = ref.watch(settingsProvider).language;
+    final profile = ref.watch(profileProvider);
+    final jobNotifier = ref.watch(jobProvider);
+    final details = profile.workerDetails;
     final workerLoc = details?.currentLocation;
     if (workerLoc == null) {
       return const Center(
@@ -52,14 +52,14 @@ class WorkerHome extends StatelessWidget {
     }
     final radiusKm = details?.notificationRadiusKm ?? 15;
     final categoryIds = details?.categoryIds ?? [];
-    final nearbyJobs = appState.getJobsNearWorker(
+    final nearbyJobs = jobNotifier.getJobsNearWorker(
       workerLocation: workerLoc,
       radiusKm: radiusKm,
       categoryIds: categoryIds,
     );
 
     return RefreshIndicator(
-      onRefresh: () => appState.refreshFromSupabase(),
+      onRefresh: () => ref.read(coordinatorProvider.notifier).refreshFromSupabase(),
       color: AppColors.teal600,
       backgroundColor: Colors.white,
       child: SingleChildScrollView(
@@ -72,57 +72,40 @@ class WorkerHome extends StatelessWidget {
             index: 0,
             child: _PresenceBanner(
               isOnline: details?.isOnlineForMap ?? false,
-              radiusKm: radiusKm,
-              appState: appState,
+              details: details,
             ),
           ),
           const SizedBox(height: 16),
 
+          // Nearby Jobs Header
           FadeInSlide(
             index: 1,
             child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Row(
-                  children: [
-                    const Icon(Icons.radio, size: 16, color: AppColors.teal600),
-                    const SizedBox(width: 8),
-                    Text(
-                      AppTranslations.t('jobsNearYou', lang),
-                      style: const TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w800,
-                        color: AppColors.slate800,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: AppColors.teal50,
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: AppColors.teal200),
-                      ),
-                      child: Text(
-                        '${nearbyJobs.length} Live',
-                        style: const TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.teal700,
-                        ),
-                      ),
-                    ),
-                  ],
+                const Icon(Icons.work_outline, size: 18, color: AppColors.teal600),
+                const SizedBox(width: 8),
+                Text(
+                  AppTranslations.t('jobsNearYou', lang),
+                  style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: AppColors.slate800),
                 ),
-                ScalePress(
+                const Spacer(),
+                GestureDetector(
                   onTap: onOpenMapClick,
-                  child: Row(
-                    children: [
-                      const Icon(Icons.map, size: 14, color: AppColors.teal600),
-                      const SizedBox(width: 4),
-                      const Text('Map View',
-                          style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.teal600)),
-                    ],
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: AppColors.teal50,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: AppColors.teal200),
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.map_outlined, size: 12, color: AppColors.teal700),
+                        SizedBox(width: 4),
+                        Text('Map', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: AppColors.teal700)),
+                      ],
+                    ),
                   ),
                 ),
               ],
@@ -130,176 +113,126 @@ class WorkerHome extends StatelessWidget {
           ),
           const SizedBox(height: 12),
 
-          // Jobs list with staggered animations
+          // Jobs List
           if (nearbyJobs.isEmpty)
             FadeInSlide(
               index: 2,
               child: EmptyState(
-                icon: Icons.radar,
-                title: 'No Jobs in Your Radius',
-                message:
-                    'Try increasing your notification radius or checking other skill categories in Settings!',
-                iconColor: AppColors.teal600,
+                icon: Icons.work_outline,
+                title: AppTranslations.t('noJobsFound', lang),
+                message: AppTranslations.t('checkBackLater', lang),
+                lang: lang,
               ),
             )
           else
-            StaggeredList(
-              delayPerItem: const Duration(milliseconds: 60),
-              children: nearbyJobs.asMap().entries.map((entry) {
-                return FadeInSlide(
-                  index: entry.key + 2,
-                  child: _WorkerJobCard(
-                    job: entry.value,
-                    workerLoc: workerLoc,
-                    hasApplied: appState.applications.any(
-                      (a) => a.jobId == entry.value.id && a.workerProfileId == appState.workerProfile?.id,
-                    ),
-                    appState: appState,
-                    onTap: () => onOpenJobDetails(entry.value),
-                  ),
-                );
-              }).toList(),
-            ),
+            ...nearbyJobs.asMap().entries.map((entry) {
+              final index = entry.key;
+              final job = entry.value;
+              final hasApplied = jobNotifier.applications.any(
+                (a) => a.jobId == job.id && a.workerProfileId == profile.workerProfile?.id,
+              );
+              return FadeInSlide(
+                index: index + 2,
+                child: _JobAlertCard(
+                  job: job,
+                  hasApplied: hasApplied,
+                  lang: lang,
+                  onTap: () => onOpenJobDetails(job),
+                ),
+              );
+            }),
+          const SizedBox(height: 32),
         ],
       ),
-    ),
+      ),
     );
   }
 }
 
-class _PresenceBanner extends StatefulWidget {
+class _PresenceBanner extends ConsumerWidget {
   final bool isOnline;
-  final double radiusKm;
-  final AppState appState;
-  const _PresenceBanner({required this.isOnline, required this.radiusKm, required this.appState});
+  final dynamic details;
+
+  const _PresenceBanner({
+    required this.isOnline,
+    this.details,
+  });
 
   @override
-  State<_PresenceBanner> createState() => _PresenceBannerState();
-}
-
-class _PresenceBannerState extends State<_PresenceBanner> {
-  late double _radius;
-
-  @override
-  void initState() {
-    super.initState();
-    _radius = widget.radiusKm;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final lang = widget.appState.language;
+  Widget build(BuildContext context, WidgetRef ref) {
     return Container(
       width: double.maxFinite,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(colors: [AppColors.teal800, AppColors.teal900]),
+        gradient: LinearGradient(
+          colors: isOnline
+              ? [AppColors.teal700, AppColors.teal900]
+              : [AppColors.slate600, AppColors.slate800],
+        ),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.teal700.withValues(alpha: 0.5)),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.teal900.withValues(alpha: 0.3),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
-          ),
-        ],
       ),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Expanded(
-                child: Row(
-                  children: [
-                    AnimatedContainer(
-                      duration: const Duration(milliseconds: 300),
-                      width: 12,
-                      height: 12,
-                      decoration: BoxDecoration(
-                        color: widget.isOnline ? AppColors.emerald400 : AppColors.slate400,
-                        shape: BoxShape.circle,
-                        boxShadow: widget.isOnline
-                            ? [BoxShadow(
-                                color: AppColors.emerald400.withValues(alpha: 0.6),
-                                blurRadius: 8,
-                                spreadRadius: 1)]
-                            : null,
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          widget.isOnline ? 'You are Online on Nearby Map' : 'You are Offline',
-                          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: Colors.white),
-                        ),
-                        Text(
-                          widget.isOnline
-                              ? 'Receiving job alerts within $_radius km radius in Lahore'
-                              : 'Turn on to receive nearby employer requests',
-                          style: const TextStyle(fontSize: 10, color: AppColors.teal100),
-                        ),
-                      ],
-                    ),
-                  ],
+              Container(
+                width: 10,
+                height: 10,
+                decoration: BoxDecoration(
+                  color: isOnline ? AppColors.emerald400 : AppColors.slate400,
+                  shape: BoxShape.circle,
                 ),
               ),
-              ScalePress(
-                onTap: () => widget.appState.toggleWorkerOnline(!widget.isOnline),
+              const SizedBox(width: 8),
+              Text(
+                isOnline ? 'You are Online & Visible' : 'You are Offline',
+                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: Colors.white),
+              ),
+              const Spacer(),
+              GestureDetector(
+                onTap: () => ref.read(profileProvider.notifier).toggleWorkerOnline(!isOnline),
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                   decoration: BoxDecoration(
-                    color: widget.isOnline ? AppColors.emerald400 : Colors.white.withValues(alpha: 0.2),
+                    color: Colors.white.withValues(alpha: 0.2),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(
-                    widget.isOnline ? 'ONLINE' : 'GO ONLINE',
-                    style: TextStyle(
-                      fontSize: 10,
-                      fontWeight: FontWeight.w800,
-                      color: widget.isOnline ? AppColors.teal950 : Colors.white,
-                    ),
+                    isOnline ? 'Go Offline' : 'Go Online',
+                    style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Colors.white),
                   ),
                 ),
               ),
             ],
           ),
           const SizedBox(height: 12),
-          const Divider(height: 1, color: AppColors.teal700, thickness: 0.5),
-          const SizedBox(height: 10),
+          // Radius slider
           Row(
             children: [
-              Text('${AppTranslations.t('notificationRadius', lang)}: ',
-                  style: const TextStyle(fontSize: 10, color: AppColors.teal100)),
-              AnimatedDefaultTextStyle(
-                duration: const Duration(milliseconds: 200),
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w800,
-                  color: _radius > 20 ? AppColors.amber300 : AppColors.emerald400,
-                ),
-                child: Text('$_radius km'),
+              const Icon(Icons.radar, size: 14, color: Colors.white54),
+              const SizedBox(width: 6),
+              Text(
+                'Alert Radius: ${(details?.notificationRadiusKm ?? 15).toInt()} km',
+                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Colors.white70),
               ),
-              const Spacer(),
-              SizedBox(
-                width: 120,
+              const SizedBox(width: 8),
+              Expanded(
                 child: SliderTheme(
                   data: SliderThemeData(
-                    activeTrackColor: AppColors.amber400,
-                    inactiveTrackColor: AppColors.teal950.withValues(alpha: 0.4),
-                    thumbColor: AppColors.amber400,
-                    overlayColor: AppColors.amber400.withValues(alpha: 0.2),
-                    trackHeight: 4,
+                    activeTrackColor: Colors.white,
+                    inactiveTrackColor: Colors.white24,
+                    thumbColor: Colors.white,
+                    overlayColor: Colors.white.withValues(alpha: 0.1),
+                    trackHeight: 3,
+                    thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
                   ),
                   child: Slider(
-                    min: 3,
-                    max: 30,
-                    value: _radius,
-                    onChanged: (v) {
-                      setState(() => _radius = v);
-                      widget.appState.updateWorkerRadius(v);
-                    },
+                    value: (details?.notificationRadiusKm ?? 15).clamp(1, 50),
+                    min: 1,
+                    max: 50,
+                    divisions: 49,
+                    onChanged: (v) => ref.read(profileProvider.notifier).updateWorkerRadius(v),
                   ),
                 ),
               ),
@@ -311,159 +244,172 @@ class _PresenceBannerState extends State<_PresenceBanner> {
   }
 }
 
-class _WorkerJobCard extends StatelessWidget {
+class _JobAlertCard extends ConsumerWidget {
   final Job job;
-  final LocationPoint workerLoc;
   final bool hasApplied;
-  final AppState appState;
+  final LanguageOption lang;
   final VoidCallback onTap;
 
-  const _WorkerJobCard({
+  const _JobAlertCard({
     required this.job,
-    required this.workerLoc,
     required this.hasApplied,
-    required this.appState,
+    required this.lang,
     required this.onTap,
   });
 
   @override
-  Widget build(BuildContext context) {
-    final distanceKm = calculateDistanceKm(
-      lat1: job.pinLocation.lat, lng1: job.pinLocation.lng,
-      lat2: workerLoc.lat, lng2: workerLoc.lng,
+  Widget build(BuildContext context, WidgetRef ref) {
+    final distance = calculateDistanceKm(
+      lat1: job.pinLocation.lat,
+      lng1: job.pinLocation.lng,
+      lat2: ref.read(profileProvider).workerDetails?.currentLocation.lat ?? 31.5204,
+      lng2: ref.read(profileProvider).workerDetails?.currentLocation.lng ?? 74.3587,
     );
-    final lang = appState.language;
 
-    return Container(
-      width: double.maxFinite,
-      margin: const EdgeInsets.only(bottom: 12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.slate200),
-        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.03), blurRadius: 4, offset: const Offset(0, 2))],
-      ),
-      child: Material(
-        color: Colors.transparent,
-        borderRadius: BorderRadius.circular(16),
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(16),
-          splashColor: AppColors.teal100,
-          highlightColor: AppColors.teal50,
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: AppColors.slate200),
+          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.03), blurRadius: 8, offset: const Offset(0, 2))],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
               children: [
-                Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: AppColors.amber50,
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: AppColors.amber200),
-                      ),
-                      child: Text(job.urgency.name.toUpperCase(),
-                          style: const TextStyle(fontSize: 9, fontWeight: FontWeight.w700, color: AppColors.amber700, letterSpacing: 0.3)),
+                // Urgency badge
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: job.urgency == JobUrgency.instant
+                        ? AppColors.rose50
+                        : job.urgency == JobUrgency.today
+                            ? AppColors.amber50
+                            : AppColors.slate100,
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(
+                      color: job.urgency == JobUrgency.instant
+                          ? AppColors.rose200
+                          : job.urgency == JobUrgency.today
+                              ? AppColors.amber200
+                              : AppColors.slate200,
                     ),
-                    const SizedBox(width: 8),
-                    Text('📍 ${formatDistance(distanceKm)}',
-                        style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: AppColors.teal700)),
-                  ],
+                  ),
+                  child: Text(
+                    job.urgency == JobUrgency.instant
+                        ? 'URGENT'
+                        : job.urgency == JobUrgency.today
+                            ? 'TODAY'
+                            : 'SCHEDULED',
+                    style: TextStyle(
+                      fontSize: 8,
+                      fontWeight: FontWeight.w800,
+                      color: job.urgency == JobUrgency.instant
+                          ? AppColors.rose500
+                          : job.urgency == JobUrgency.today
+                              ? AppColors.amber700
+                              : AppColors.slate500,
+                    ),
+                  ),
                 ),
-                const SizedBox(height: 8),
-                Text(job.title,
-                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: AppColors.slate800, height: 1.3)),
-                const SizedBox(height: 4),
-                Text(job.description, maxLines: 2, overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500, color: AppColors.slate500)),
-                const SizedBox(height: 10),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(job.pinLocation.address,
-                        style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: AppColors.slate600)),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      children: [
-                        Text(formatPkr(job.budgetAmount),
-                            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: AppColors.slate800)),
-                        Text(job.budgetType.name,
-                            style: const TextStyle(fontSize: 9, color: AppColors.slate400)),
-                      ],
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                const Divider(height: 1),
-                const SizedBox(height: 10),
-                Row(
-                  children: [
-                    Expanded(
-                      child: ScalePress(
-                        onTap: () {},
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(vertical: 10),
-                          decoration: BoxDecoration(
-                            color: AppColors.slate100,
-                            borderRadius: BorderRadius.circular(10),
-                            border: Border.all(color: AppColors.slate200),
-                          ),
-                          child: const Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(Icons.close, size: 14, color: AppColors.slate600),
-                              SizedBox(width: 6),
-                              Text('Not Now',
-                                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.slate600)),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: ScalePress(
-                        onTap: hasApplied ? null : () => appState.expressInterest(job.id),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(vertical: 10),
-                          decoration: BoxDecoration(
-                            color: hasApplied ? AppColors.teal50 : AppColors.teal600,
-                            borderRadius: BorderRadius.circular(10),
-                            boxShadow: hasApplied
-                                ? null
-                                : [BoxShadow(
-                                    color: AppColors.teal600.withValues(alpha: 0.3),
-                                    blurRadius: 6,
-                                    offset: const Offset(0, 2))],
-                            border: hasApplied ? Border.all(color: AppColors.teal200) : null,
-                          ),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(Icons.check, size: 14,
-                                  color: hasApplied ? AppColors.teal700 : Colors.white),
-                              const SizedBox(width: 6),
-                              Text(
-                                hasApplied ? 'Interest Sent' : AppTranslations.t('imInterested', lang),
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w700,
-                                  color: hasApplied ? AppColors.teal700 : Colors.white,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    job.title,
+                    style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: AppColors.slate800),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
               ],
             ),
-          ),
+            const SizedBox(height: 8),
+            // Location + distance
+            Row(
+              children: [
+                const Icon(Icons.location_on_outlined, size: 12, color: AppColors.slate400),
+                const SizedBox(width: 4),
+                Expanded(
+                  child: Text(
+                    job.pinLocation.address,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500, color: AppColors.slate500),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  formatDistance(distance),
+                  style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: AppColors.teal600),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            // Budget + Apply button
+            Row(
+              children: [
+                Text(
+                  formatPkr(job.budgetAmount),
+                  style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w900, color: AppColors.slate800),
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  job.budgetType == BudgetType.hourly ? '/hr' : job.budgetType == BudgetType.negotiable ? '(neg.)' : '',
+                  style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: AppColors.slate400),
+                ),
+                const Spacer(),
+                GestureDetector(
+                  onTap: hasApplied
+                      ? null
+                      : () {
+                          final workerProfile = ref.read(profileProvider).workerProfile;
+                          if (workerProfile != null) {
+                            ref.read(jobProvider.notifier).expressInterest(
+                              job.id,
+                              workerProfileId: workerProfile.id,
+                              workerDisplayName: workerProfile.displayName,
+                            );
+                          }
+                        },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: hasApplied ? AppColors.teal50 : AppColors.teal600,
+                      borderRadius: BorderRadius.circular(10),
+                      boxShadow: hasApplied
+                          ? null
+                          : [BoxShadow(
+                              color: AppColors.teal600.withValues(alpha: 0.3),
+                              blurRadius: 6,
+                              offset: const Offset(0, 2))],
+                      border: hasApplied ? Border.all(color: AppColors.teal200) : null,
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.check, size: 14,
+                            color: hasApplied ? AppColors.teal700 : Colors.white),
+                        const SizedBox(width: 6),
+                        Text(
+                          hasApplied ? 'Interest Sent' : AppTranslations.t('imInterested', lang),
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            color: hasApplied ? AppColors.teal700 : Colors.white,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
         ),
       ),
     );

@@ -86,7 +86,6 @@ GoRouter _buildRouter(AppState appState) {
           GoRoute(
             path: '/worker/home',
             builder: (context, state) => WorkerHome(
-              appState: appState,
               onOpenJobDetails: (job) => context.go('/job/${job.id}'),
               onOpenMapClick: () => context.go('/map'),
             ),
