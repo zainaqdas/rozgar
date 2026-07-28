@@ -1,5 +1,4 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'app_state.dart';
 import 'auth_provider.dart';
 import 'profile_provider.dart';
 import 'job_provider.dart';
@@ -8,10 +7,6 @@ import 'notification_provider.dart';
 import 'worker_provider.dart';
 import 'settings_provider.dart';
 import 'coordinator.dart';
-
-final appStateProvider = ChangeNotifierProvider<AppState>((ref) {
-  return AppState();
-});
 
 final authProvider = ChangeNotifierProvider<AuthNotifier>((ref) {
   return AuthNotifier();
