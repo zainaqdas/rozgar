@@ -201,7 +201,6 @@ GoRouter _buildRouter(AppState appState) {
         path: '/settings',
         parentNavigatorKey: _rootNavigatorKey,
         builder: (context, state) => SettingsScreen(
-          appState: appState,
           onBack: () => context.pop(),
         ),
       ),

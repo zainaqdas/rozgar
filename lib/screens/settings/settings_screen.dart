@@ -1,26 +1,25 @@
 import 'package:flutter/material.dart';
-import '../../providers/app_state.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../providers/providers.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/translations.dart';
 import '../../models/profile.dart';
 
 /// Dedicated Settings screen (Screen #16 of prompt spec).
 /// Manages language, notification radius, verification, block/report, and delete account.
-class SettingsScreen extends StatefulWidget {
-  final AppState appState;
+class SettingsScreen extends ConsumerStatefulWidget {
   final VoidCallback onBack;
 
   const SettingsScreen({
     super.key,
-    required this.appState,
     required this.onBack,
   });
 
   @override
-  State<SettingsScreen> createState() => _SettingsScreenState();
+  ConsumerState<SettingsScreen> createState() => _SettingsScreenState();
 }
 
-class _SettingsScreenState extends State<SettingsScreen> {
+class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   final _cnicController = TextEditingController(text: '35201-1234567-1');
   bool _isVerifyingCnic = false;
   bool _cnicVerified = false;
@@ -34,10 +33,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final state = widget.appState;
-    final lang = state.language;
-    final details = state.workerDetails;
-    final profile = state.activeProfile;
+    final settings = ref.watch(settingsProvider);
+    final profile = ref.watch(profileProvider);
+    final lang = settings.language;
+    final details = profile.workerDetails;
+    final activeProfile = profile.activeProfile;
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
@@ -81,7 +81,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     lang == LanguageOption.en ? 'English' : 'اردو (Urdu)',
                 trailing: GestureDetector(
                   onTap: () {
-                    state.setLanguage(
+                    ref.read(settingsProvider.notifier).setLanguage(
                       lang == LanguageOption.en
                           ? LanguageOption.ur
                           : LanguageOption.en,
@@ -111,7 +111,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const SizedBox(height: 16),
 
           // Notification Settings (Worker only)
-          if (state.activeProfileType == ProfileType.worker && details != null)
+          if (profile.activeProfileType == ProfileType.worker && details != null)
             _SettingsGroup(
               title: 'Notifications & Online',
               children: [
@@ -124,7 +124,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       : 'Hidden from employers',
                   trailing: Switch(
                     value: details.isOnlineForMap,
-                    onChanged: (v) => state.toggleWorkerOnline(v),
+                    onChanged: (v) => ref.read(profileProvider.notifier).toggleWorkerOnline(v),
                     activeThumbColor: AppColors.teal600,
                   ),
                 ),
@@ -141,121 +141,102 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         activeTrackColor: AppColors.teal600,
                         inactiveTrackColor: AppColors.slate200,
                         thumbColor: AppColors.teal600,
-                        overlayColor:
-                            AppColors.teal600.withValues(alpha: 0.2),
+                        overlayColor: AppColors.teal600.withValues(alpha: 0.1),
                         trackHeight: 4,
+                        thumbShape: const RoundSliderThumbShape(
+                            enabledThumbRadius: 7),
                       ),
                       child: Slider(
-                        min: 3,
-                        max: 30,
-                        value: details.notificationRadiusKm,
-                        onChanged: (v) => state.updateWorkerRadius(v),
+                        value: details.notificationRadiusKm.clamp(1, 50),
+                        min: 1,
+                        max: 50,
+                        divisions: 49,
+                        onChanged: (v) => ref.read(profileProvider.notifier).updateWorkerRadius(v),
                       ),
                     ),
                   ),
                 ),
               ],
             ),
-          if (state.activeProfileType == ProfileType.worker)
+          if (profile.activeProfileType == ProfileType.worker)
             const SizedBox(height: 16),
 
-          // Identity Verification
+          // Verification
           _SettingsGroup(
-            title: 'Identity & Security',
+            title: 'Verification',
             children: [
               _SettingsRow(
                 icon: Icons.verified_user,
-                title: 'NADRA CNIC Verification',
-                subtitle: _cnicVerified || profile?.isVerified == true
-                    ? '✅ Verified Citizen'
-                    : 'Not verified yet',
-                trailing: _cnicVerified || profile?.isVerified == true
+                title: 'CNIC Verification',
+                subtitle: _cnicVerified
+                    ? 'Verified ✓'
+                    : 'Verify your identity for trust',
+                iconColor: _cnicVerified ? AppColors.teal600 : AppColors.amber600,
+                trailing: _cnicVerified
                     ? const Icon(Icons.check_circle,
                         size: 20, color: AppColors.teal600)
                     : GestureDetector(
-                        onTap: _verifyCnic,
+                        onTap: () => _verifyCnic(),
                         child: Container(
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 10, vertical: 6),
+                              horizontal: 12, vertical: 6),
                           decoration: BoxDecoration(
-                            color: AppColors.teal600,
+                            color: AppColors.amber50,
                             borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: AppColors.amber200),
                           ),
-                          child: _isVerifyingCnic
-                              ? const SizedBox(
-                                  width: 14,
-                                  height: 14,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    color: Colors.white,
-                                  ),
-                                )
-                              : const Text('Verify',
-                                  style: TextStyle(
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.w700,
-                                      color: Colors.white)),
+                          child: Text(
+                            _isVerifyingCnic ? 'Verifying...' : 'Verify Now',
+                            style: const TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.amber700,
+                            ),
+                          ),
                         ),
                       ),
               ),
-              if (!(_cnicVerified || profile?.isVerified == true)) ...[
-                const Divider(height: 1, indent: 48),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(48, 8, 16, 8),
-                  child: TextField(
-                    controller: _cnicController,
-                    decoration: const InputDecoration(
-                      hintText: '35201-XXXXXXX-X',
-                      labelText: 'CNIC Number',
-                      isDense: true,
-                    ),
-                  ),
-                ),
-              ],
             ],
           ),
           const SizedBox(height: 16),
 
-          // Account Management
+          // Account
           _SettingsGroup(
             title: 'Account',
             children: [
               _SettingsRow(
-                icon: Icons.report,
-                title: 'Report a User',
-                subtitle: 'Report inappropriate behavior',
-                trailing: const Icon(Icons.chevron_right,
-                    size: 18, color: AppColors.slate400),
-                onTap: () => _showReportDialog(context, state),
+                icon: Icons.person,
+                title: 'Display Name',
+                subtitle: activeProfile?.displayName ?? 'Not set',
               ),
               const Divider(height: 1, indent: 48),
               _SettingsRow(
-                icon: Icons.block,
-                title: 'Blocked Users',
-                subtitle: 'Manage blocked profiles',
-                trailing: const Icon(Icons.chevron_right,
-                    size: 18, color: AppColors.slate400),
-                onTap: () => _showBlockedDialog(context),
+                icon: Icons.location_city,
+                title: 'City',
+                subtitle: activeProfile?.city ?? 'Lahore',
               ),
               const Divider(height: 1, indent: 48),
               _SettingsRow(
                 icon: Icons.info_outline,
                 title: 'About Rozgar',
-                subtitle: 'Version 1.0.0 • Pakistan',
-                trailing: const Icon(Icons.chevron_right,
-                    size: 18, color: AppColors.slate400),
+                subtitle: 'Version 1.0.0',
                 onTap: () => _showAboutDialog(context),
               ),
-              const Divider(height: 1, indent: 48),
+            ],
+          ),
+          const SizedBox(height: 16),
+
+          // Danger Zone
+          _SettingsGroup(
+            title: 'Danger Zone',
+            children: [
               _SettingsRow(
                 icon: Icons.logout,
-                title: 'Log Out',
+                title: 'Logout',
                 subtitle: 'Sign out of your account',
-                iconColor: AppColors.rose500,
-                titleColor: AppColors.rose500,
+                iconColor: AppColors.slate500,
                 onTap: () {
-                  state.logout();
-                  widget.onBack();
+                  ref.read(coordinatorProvider.notifier).logout();
                 },
               ),
               const Divider(height: 1, indent: 48),
@@ -334,8 +315,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       Expanded(
                         child: GestureDetector(
                           onTap: () {
-                            state.logout();
-                            widget.onBack();
+                            ref.read(coordinatorProvider.notifier).logout();
                           },
                           child: Container(
                             padding:
@@ -345,10 +325,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               borderRadius: BorderRadius.circular(10),
                             ),
                             child: const Center(
-                              child: Text('Delete My Account',
+                              child: Text('Delete',
                                   style: TextStyle(
                                       fontSize: 12,
-                                      fontWeight: FontWeight.w800,
+                                      fontWeight: FontWeight.w700,
                                       color: Colors.white)),
                             ),
                           ),
@@ -359,95 +339,29 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ],
               ),
             ),
-          const SizedBox(height: 32),
         ],
       ),
     );
   }
 
-  void _verifyCnic() {
+  Future<void> _verifyCnic() async {
     setState(() => _isVerifyingCnic = true);
-    Future.delayed(const Duration(milliseconds: 1200), () {
-      if (mounted) {
-        setState(() {
-          _isVerifyingCnic = false;
-          _cnicVerified = true;
-        });
-      }
-    });
+    await Future.delayed(const Duration(seconds: 2));
+    if (mounted) {
+      setState(() {
+        _isVerifyingCnic = false;
+        _cnicVerified = true;
+      });
+    }
   }
 
-  void _showReportDialog(BuildContext context, AppState state) {
+  void _showAboutDialog(BuildContext ctx) {
     showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16)),
-        title: const Text('Report a User',
-            style: TextStyle(
-                fontSize: 16, fontWeight: FontWeight.w800)),
-        content: const Text(
-          'Use this to report inappropriate behavior, fake profiles, or spam. Our team will review within 24 hours.',
-          style: TextStyle(fontSize: 12, height: 1.5),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                    content: Text('Report submitted. We will review it shortly.')),
-              );
-            },
-            child: const Text('Submit Report'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showBlockedDialog(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16)),
-        title: const Text('Blocked Users',
-            style: TextStyle(
-                fontSize: 16, fontWeight: FontWeight.w800)),
-        content: const Text(
-          'You haven\'t blocked any users yet.',
-          style: TextStyle(fontSize: 12),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Close'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showAboutDialog(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16)),
-        title: const Row(
-          children: [
-            Icon(Icons.info, size: 20, color: AppColors.teal600),
-            SizedBox(width: 8),
-            Text('About Rozgar',
-                style: TextStyle(
-                    fontSize: 16, fontWeight: FontWeight.w800)),
-          ],
-        ),
+      context: ctx,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('About Rozgar',
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
         content: const Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
