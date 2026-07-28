@@ -10,6 +10,7 @@ class StorageService {
   static const String avatarsBucket = 'avatars';
   static const String portfoliosBucket = 'portfolios';
   static const String cnicBucket = 'cnic-docs';
+  static const String chatMediaBucket = 'chat-media';
 
   Future<String> uploadAvatar(String userId, Uint8List bytes, String ext) async {
     final path = '$userId/avatar.$ext';
@@ -48,9 +49,9 @@ class StorageService {
   Future<String> uploadChatMedia(String conversationId, String senderId, Uint8List bytes, String filename) async {
     final path = '$conversationId/$senderId/$filename';
     await SupabaseConfig.client.storage
-        .from(portfoliosBucket)
+        .from(chatMediaBucket)
         .uploadBinary(path, bytes, fileOptions: const FileOptions(upsert: false));
-    return SupabaseConfig.client.storage.from(portfoliosBucket).getPublicUrl(path);
+    return SupabaseConfig.client.storage.from(chatMediaBucket).getPublicUrl(path);
   }
 
   String getPublicUrl(String bucket, String path) {
