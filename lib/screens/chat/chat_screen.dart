@@ -1,67 +1,43 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:file_picker/file_picker.dart';
-import '../../providers/app_state.dart';
+import '../../providers/providers.dart';
 import '../../services/storage_service.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/formatters.dart';
 import '../../models/job.dart';
 import '../../models/conversation.dart';
 import '../../models/profile.dart';
-import '../../models/review.dart';
 
-class ChatScreen extends StatefulWidget {
-  final AppState appState;
+class ChatScreen extends ConsumerStatefulWidget {
   final String? targetWorkerProfileId;
   final VoidCallback onBack;
   final ValueChanged<String>? onJobCompleteClick;
 
   const ChatScreen({
     super.key,
-    required this.appState,
     this.targetWorkerProfileId,
     required this.onBack,
     this.onJobCompleteClick,
   });
 
   @override
-  State<ChatScreen> createState() => _ChatScreenState();
+  ConsumerState<ChatScreen> createState() => _ChatScreenState();
 }
 
-class _ChatScreenState extends State<ChatScreen> {
+class _ChatScreenState extends ConsumerState<ChatScreen> {
   String? _selectedConversationId;
   final _msgController = TextEditingController();
   final _scrollController = ScrollController();
-  bool _isRecordingVoice = false;
-  int _voiceSec = 0;
-
-  @override
-  void initState() {
-    super.initState();
-    widget.appState.addListener(_onStateChanged);
-  }
-
-  @override
-  void didUpdateWidget(covariant ChatScreen oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.appState != widget.appState) {
-      oldWidget.appState.removeListener(_onStateChanged);
-      widget.appState.addListener(_onStateChanged);
-    }
-  }
+  final bool _isRecordingVoice = false;
+  final int _voiceSec = 0;
 
   @override
   void dispose() {
-    widget.appState.removeListener(_onStateChanged);
     _msgController.dispose();
     _scrollController.dispose();
     super.dispose();
-  }
-
-  void _onStateChanged() {
-    if (!mounted) return;
-    setState(() {});
-    _scrollToBottom();
   }
 
   void _scrollToBottom() {
@@ -86,77 +62,112 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final state = widget.appState;
-    final conversations = state.conversations;
+    final chatNotifier = ref.watch(chatProvider);
+    final conversations = chatNotifier.conversations;
 
     if (widget.targetWorkerProfileId != null) {
-      return _buildSingleChat(state, widget.targetWorkerProfileId!, conversations);
+      return _buildSingleChat(widget.targetWorkerProfileId!, conversations);
     }
 
     if (_selectedConversationId != null) {
-      return _buildSingleChatById(state, _selectedConversationId!);
+      return _buildSingleChatById(_selectedConversationId!);
     }
 
-    return _buildConversationList(state, conversations);
+    return _buildConversationList(conversations);
   }
 
-  Widget _buildConversationList(AppState state, List<Conversation> conversations) {
-    final isEmployer = state.activeProfileType == ProfileType.employer;
-
+  Widget _buildConversationList(List<Conversation> conversations) {
     return Column(
       children: [
         _buildHeader('Messages', showBack: false),
-        if (conversations.isEmpty)
-          Expanded(
-            child: Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.chat_bubble_outline, size: 48, color: AppColors.slate300),
-                  const SizedBox(height: 12),
-                  const Text('No conversations yet',
-                      style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.slate500)),
-                  const SizedBox(height: 4),
-                  const Text('Chat with workers from job details or the map',
-                      style: TextStyle(fontSize: 11, color: AppColors.slate400)),
-                ],
-              ),
-            ),
-          )
-        else
-          Expanded(
-            child: ListView.separated(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              itemCount: conversations.length,
-              separatorBuilder: (_, _) => const Divider(height: 1, color: AppColors.slate100),
-              itemBuilder: (_, i) {
-                final conv = conversations[i];
-                final partnerId = isEmployer ? conv.workerProfileId : conv.employerProfileId;
-                final partnerData = state.getPublicProfile(partnerId);
-                final unread = isEmployer ? conv.unreadCountEmployer : conv.unreadCountWorker;
-                final lastMsg = conv.lastMessageText ?? 'No messages yet';
+        Expanded(
+          child: conversations.isEmpty
+              ? const Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.chat_bubble_outline, size: 48, color: AppColors.slate300),
+                      SizedBox(height: 12),
+                      Text('No conversations yet',
+                          style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.slate500)),
+                      SizedBox(height: 4),
+                      Text('Conversations start when you hire a worker.',
+                          style: TextStyle(fontSize: 12, color: AppColors.slate400)),
+                    ],
+                  ),
+                )
+              : ListView.builder(
+                  padding: const EdgeInsets.all(12),
+                  itemCount: conversations.length,
+                  itemBuilder: (context, index) {
+                    final conv = conversations[index];
+                    final profile = ref.read(profileProvider);
+                    final isEmployer = profile.activeProfileType == ProfileType.employer;
+                    final partnerId = isEmployer ? conv.workerProfileId : conv.employerProfileId;
+                    final partnerData = ref.read(workerProvider).getPublicProfile(
+                      partnerId, profile.workerProfile, profile.workerDetails);
+                    final displayName = partnerData?.profile.displayName ?? 'User';
 
-                return _ConversationTile(
-                  displayName: partnerData?.profile.displayName ?? 'Unknown',
-                  photoUrl: partnerData?.profile.profilePhotoUrl,
-                  lastMessage: lastMsg,
-                  lastTime: conv.lastMessageTime,
-                  unreadCount: unread,
-                  onTap: () => _openConversation(conv.id),
-                );
-              },
-            ),
-          ),
+                    return GestureDetector(
+                      onTap: () => _openConversation(conv.id),
+                      child: Container(
+                        margin: const EdgeInsets.only(bottom: 8),
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: AppColors.slate200),
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 44,
+                              height: 44,
+                              decoration: BoxDecoration(
+                                color: AppColors.teal50,
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(color: AppColors.teal200),
+                              ),
+                              child: Center(
+                                child: Text(
+                                  displayName.isNotEmpty ? displayName[0].toUpperCase() : '?',
+                                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: AppColors.teal700),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(displayName,
+                                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.slate800)),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    conv.lastMessageText ?? 'No messages yet',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(fontSize: 11, color: AppColors.slate500),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            if (conv.lastMessageTime != null)
+                              Text(timeAgo(conv.lastMessageTime!),
+                                  style: const TextStyle(fontSize: 9, color: AppColors.slate400)),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+        ),
       ],
     );
   }
 
   Widget _buildHeader(String title, {bool showBack = true}) {
     return Container(
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        border: Border(bottom: BorderSide(color: AppColors.slate200)),
-      ),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       child: Row(
         children: [
@@ -183,25 +194,27 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
-  Widget _buildSingleChatById(AppState state, String conversationId) {
-    final conv = state.conversations.where((c) => c.id == conversationId).firstOrNull;
+  Widget _buildSingleChatById(String conversationId) {
+    final chatNotifier = ref.watch(chatProvider);
+    final conv = chatNotifier.conversations.where((c) => c.id == conversationId).firstOrNull;
     if (conv == null) {
-      return _buildConversationList(state, state.conversations);
+      return _buildConversationList(chatNotifier.conversations);
     }
-    return _buildChatView(state, conv);
+    return _buildChatView(conv);
   }
 
-  Widget _buildSingleChat(AppState state, String targetWorkerProfileId, List<Conversation> conversations) {
+  Widget _buildSingleChat(String targetWorkerProfileId, List<Conversation> conversations) {
     final existingConv = conversations.where(
       (c) => c.workerProfileId == targetWorkerProfileId,
     ).firstOrNull;
 
-    final activeJob = state.jobs.where(
+    final jobs = ref.watch(jobProvider).jobs;
+    final activeJob = jobs.where(
       (j) => j.status == JobStatus.open || j.status == JobStatus.hired,
-    ).firstOrNull ?? state.jobs.firstOrNull;
+    ).firstOrNull ?? jobs.firstOrNull;
 
     if (existingConv != null) {
-      return _buildChatView(state, existingConv);
+      return _buildChatView(existingConv);
     }
 
     if (activeJob == null) {
@@ -218,26 +231,33 @@ class _ChatScreenState extends State<ChatScreen> {
       );
     }
 
-    final conv = state.getOrCreateConversation(activeJob.id, targetWorkerProfileId);
-    return _buildChatView(state, conv);
+    final profile = ref.read(profileProvider);
+    final employerId = profile.employerProfile?.id ?? '';
+    final conv = ref.read(chatProvider.notifier).getOrCreateConversation(
+      activeJob.id, targetWorkerProfileId, employerId);
+    return _buildChatView(conv);
   }
 
-  Widget _buildChatView(AppState state, Conversation conversation) {
-    final convMessages = state.messages
+  Widget _buildChatView(Conversation conversation) {
+    final chatNotifier = ref.watch(chatProvider);
+    final profile = ref.watch(profileProvider);
+    final jobs = ref.watch(jobProvider).jobs;
+    final convMessages = chatNotifier.messages
         .where((m) => m.conversationId == conversation.id)
         .toList();
-    final isEmployer = state.activeProfileType == ProfileType.employer;
+    final isEmployer = profile.activeProfileType == ProfileType.employer;
     final partnerId = isEmployer
         ? conversation.workerProfileId
         : conversation.employerProfileId;
-    final partnerData = state.getPublicProfile(partnerId);
-    final activeJob = state.jobs.where(
+    final partnerData = ref.read(workerProvider).getPublicProfile(
+      partnerId, profile.workerProfile, profile.workerDetails);
+    final activeJob = jobs.where(
       (j) => j.status == JobStatus.open || j.status == JobStatus.hired,
-    ).firstOrNull ?? state.jobs.firstOrNull;
+    ).firstOrNull ?? jobs.firstOrNull;
 
     return Column(
       children: [
-        _buildChatHeader(state, partnerData, activeJob),
+        _buildChatHeader(partnerData, activeJob),
         Expanded(
           child: Column(
             children: [
@@ -245,121 +265,89 @@ class _ChatScreenState extends State<ChatScreen> {
               Expanded(
                 child: ListView.builder(
                   controller: _scrollController,
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                   itemCount: convMessages.length,
-                  itemBuilder: (_, i) {
-                    final msg = convMessages[i];
-                    final isMe = msg.senderProfileId == state.activeProfile?.id;
-                    return Align(
-                      alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
-                      child: Container(
-                        margin: const EdgeInsets.only(bottom: 8),
-                        constraints: BoxConstraints(
-                          maxWidth: MediaQuery.of(context).size.width * 0.78,
-                        ),
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: isMe ? AppColors.teal600 : Colors.white,
-                          borderRadius: BorderRadius.only(
-                            topLeft: const Radius.circular(14),
-                            topRight: const Radius.circular(14),
-                            bottomLeft: Radius.circular(isMe ? 14 : 4),
-                            bottomRight: Radius.circular(isMe ? 4 : 14),
-                          ),
-                          border: isMe ? null : Border.all(color: AppColors.slate200),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
-                          children: [
-                            if (msg.contentType == ContentType.image && msg.mediaUrl != null)
-                              ClipRRect(
-                                borderRadius: BorderRadius.circular(10),
-                                child: Image.network(
-                                  msg.mediaUrl!,
-                                  width: 200,
-                                  height: 200,
-                                  fit: BoxFit.cover,
-                                  errorBuilder: (_, _, _) => const Icon(Icons.broken_image, size: 48),
-                                ),
-                              )
-                            else if (msg.contentType == ContentType.file && msg.mediaUrl != null)
-                              Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(Icons.insert_drive_file, size: 20,
-                                      color: isMe ? Colors.white70 : AppColors.slate600),
-                                  const SizedBox(width: 4),
-                                  Text(
-                                    msg.content.replaceAll('📎 ', ''),
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.w600,
-                                      color: isMe ? Colors.white : AppColors.slate800,
-                                      decoration: TextDecoration.underline,
-                                    ),
-                                  ),
-                                ],
-                              )
-                            else if (msg.contentType == ContentType.voice)
-                              Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(Icons.play_circle_fill, size: 20,
-                                      color: isMe ? Colors.white : AppColors.teal600),
-                                  const SizedBox(width: 4),
-                                  Icon(Icons.graphic_eq, size: 18,
-                                      color: isMe ? Colors.white70 : AppColors.slate500),
-                                ],
-                              )
-                            else
-                              Text(
-                                msg.content,
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600,
-                                  color: isMe ? Colors.white : AppColors.slate800,
-                                  height: 1.4,
-                                ),
-                              ),
-                            const SizedBox(height: 4),
-                            Text(
-                              formatTime(msg.sentAt),
-                              style: TextStyle(
-                                fontSize: 9,
-                                color: isMe ? Colors.white70 : AppColors.slate400,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    );
+                  itemBuilder: (context, index) {
+                    final msg = convMessages[index];
+                    final isMine = msg.senderProfileId == profile.activeProfile?.id;
+                    return _buildMessageBubble(msg, isMine);
                   },
                 ),
               ),
             ],
           ),
         ),
-        _buildQuickChips(state, conversation, activeJob),
-        _buildInputArea(state, conversation),
+        _buildQuickChips(conversation, activeJob),
+        _buildMessageInput(conversation),
       ],
     );
   }
 
-  Widget _buildChatHeader(AppState state, ({Profile profile, WorkerDetails? workerDetails, List<Review> reviews})? partnerData, Job? activeJob) {
+  Widget _buildMessageBubble(Message msg, bool isMine) {
+    return Align(
+      alignment: isMine ? Alignment.centerRight : Alignment.centerLeft,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        constraints: const BoxConstraints(maxWidth: 260),
+        decoration: BoxDecoration(
+          color: isMine ? AppColors.teal600 : Colors.white,
+          borderRadius: BorderRadius.only(
+            topLeft: const Radius.circular(14),
+            topRight: const Radius.circular(14),
+            bottomLeft: Radius.circular(isMine ? 14 : 4),
+            bottomRight: Radius.circular(isMine ? 4 : 14),
+          ),
+          border: isMine ? null : Border.all(color: AppColors.slate200),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (msg.contentType == ContentType.image && msg.mediaUrl != null)
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: Image.network(msg.mediaUrl!, width: 200, fit: BoxFit.cover,
+                  errorBuilder: (_, _, _) => const Icon(Icons.broken_image, size: 40)),
+              )
+            else if (msg.contentType == ContentType.location)
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.location_on, size: 14, color: isMine ? Colors.white : AppColors.teal600),
+                  const SizedBox(width: 4),
+                  Flexible(child: Text(msg.content,
+                      style: TextStyle(fontSize: 12, color: isMine ? Colors.white : AppColors.slate700))),
+                ],
+              )
+            else
+              Text(msg.content,
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500,
+                      color: isMine ? Colors.white : AppColors.slate700, height: 1.3)),
+            const SizedBox(height: 3),
+            Text(timeAgo(msg.sentAt),
+                style: TextStyle(fontSize: 8, color: isMine ? Colors.white60 : AppColors.slate400)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildChatHeader(
+      ({Profile profile, WorkerDetails? workerDetails})? partnerData, Job? activeJob) {
     return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: const BoxDecoration(
         color: Colors.white,
         border: Border(bottom: BorderSide(color: AppColors.slate200)),
       ),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       child: Row(
         children: [
           GestureDetector(
-            onTap: widget.targetWorkerProfileId != null ? widget.onBack : _closeConversation,
+            onTap: _closeConversation,
             child: Container(
               padding: const EdgeInsets.all(6),
               decoration: BoxDecoration(
-                color: Colors.white,
+                color: AppColors.slate50,
                 borderRadius: BorderRadius.circular(8),
                 border: Border.all(color: AppColors.slate200),
               ),
@@ -412,7 +400,7 @@ class _ChatScreenState extends State<ChatScreen> {
             GestureDetector(
               onTap: () {
                 if (activeJob != null) {
-                  state.completeJob(activeJob.id);
+                  ref.read(jobProvider.notifier).completeJob(activeJob.id);
                   widget.onJobCompleteClick?.call(activeJob.id);
                 }
               },
@@ -447,13 +435,19 @@ class _ChatScreenState extends State<ChatScreen> {
           Expanded(
             child: Row(
               children: [
-                const Text('Job: ', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: AppColors.teal700)),
+                const Icon(Icons.work_outline, size: 16, color: AppColors.teal600),
+                const SizedBox(width: 8),
                 Expanded(
-                  child: Text(
-                    activeJob.title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500, color: AppColors.slate700),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(activeJob.title,
+                          maxLines: 1, overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.slate800)),
+                      Text(activeJob.pinLocation.address,
+                          maxLines: 1, overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 9, color: AppColors.slate500)),
+                    ],
                   ),
                 ),
               ],
@@ -468,7 +462,7 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
-  Widget _buildQuickChips(AppState state, Conversation conversation, Job? activeJob) {
+  Widget _buildQuickChips(Conversation conversation, Job? activeJob) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: const BoxDecoration(
@@ -482,11 +476,14 @@ class _ChatScreenState extends State<ChatScreen> {
             label: 'Share Pin',
             onTap: activeJob != null
                 ? () {
-                    state.sendMessage(
+                    final senderId = ref.read(profileProvider).activeProfile?.id ?? '';
+                    ref.read(chatProvider.notifier).sendMessage(
                       conversation.id,
                       '📍 Live Location: ${activeJob.pinLocation.address}',
+                      senderProfileId: senderId,
                       contentType: ContentType.location,
                     );
+                    _scrollToBottom();
                   }
                 : null,
           ),
@@ -496,11 +493,14 @@ class _ChatScreenState extends State<ChatScreen> {
             label: 'Quote Offer',
             onTap: activeJob != null
                 ? () {
-                    state.sendMessage(
+                    final senderId = ref.read(profileProvider).activeProfile?.id ?? '';
+                    ref.read(chatProvider.notifier).sendMessage(
                       conversation.id,
-                      '💰 Agreed Quote Proposal: ${formatPkr(activeJob.budgetAmount)}',
+                      '💰 Quote: ${formatPkr(activeJob.budgetAmount)} (${activeJob.budgetType.name})',
+                      senderProfileId: senderId,
                       contentType: ContentType.quote,
                     );
+                    _scrollToBottom();
                   }
                 : null,
           ),
@@ -509,46 +509,15 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
-  Widget _buildInputArea(AppState state, Conversation conversation) {
+  Widget _buildMessageInput(Conversation conversation) {
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(10),
       decoration: const BoxDecoration(
         color: Colors.white,
         border: Border(top: BorderSide(color: AppColors.slate200)),
       ),
       child: Row(
         children: [
-          GestureDetector(
-            onTap: () {
-              if (_isRecordingVoice) return;
-              setState(() {
-                _isRecordingVoice = true;
-                _voiceSec = 0;
-              });
-              Future.delayed(const Duration(seconds: 3), () {
-                if (mounted) {
-                  state.sendMessage(conversation.id, '🎤 Voice note (0:03)', contentType: ContentType.voice);
-                  setState(() {
-                    _isRecordingVoice = false;
-                    _voiceSec = 0;
-                  });
-                }
-              });
-            },
-            child: Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: _isRecordingVoice ? AppColors.amber500 : AppColors.slate100,
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Icon(
-                _isRecordingVoice ? Icons.stop : Icons.mic,
-                size: 18,
-                color: _isRecordingVoice ? Colors.white : AppColors.slate600,
-              ),
-            ),
-          ),
-          const SizedBox(width: 8),
           GestureDetector(
             onTap: () => _pickAndSendImage(conversation.id),
             child: Container(
@@ -557,7 +526,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 color: AppColors.slate100,
                 borderRadius: BorderRadius.circular(10),
               ),
-              child: const Icon(Icons.image, size: 18, color: AppColors.slate600),
+              child: const Icon(Icons.camera_alt_outlined, size: 18, color: AppColors.slate600),
             ),
           ),
           const SizedBox(width: 8),
@@ -588,8 +557,11 @@ class _ChatScreenState extends State<ChatScreen> {
               ),
               onSubmitted: (v) {
                 if (v.trim().isEmpty) return;
-                state.sendMessage(conversation.id, v.trim());
+                final senderId = ref.read(profileProvider).activeProfile?.id ?? '';
+                ref.read(chatProvider.notifier).sendMessage(
+                  conversation.id, v.trim(), senderProfileId: senderId);
                 _msgController.clear();
+                _scrollToBottom();
               },
             ),
           ),
@@ -597,8 +569,11 @@ class _ChatScreenState extends State<ChatScreen> {
           GestureDetector(
             onTap: () {
               if (_msgController.text.trim().isEmpty) return;
-              state.sendMessage(conversation.id, _msgController.text.trim());
+              final senderId = ref.read(profileProvider).activeProfile?.id ?? '';
+              ref.read(chatProvider.notifier).sendMessage(
+                conversation.id, _msgController.text.trim(), senderProfileId: senderId);
               _msgController.clear();
+              _scrollToBottom();
             },
             child: Container(
               padding: const EdgeInsets.all(10),
@@ -627,19 +602,18 @@ class _ChatScreenState extends State<ChatScreen> {
     if (picked == null) return;
     final bytes = await picked.readAsBytes();
     try {
+      final senderId = ref.read(profileProvider).activeProfile?.id ?? 'unknown';
       final url = await StorageService.instance.uploadChatMedia(
-        conversationId,
-        widget.appState.activeProfile?.id ?? 'unknown',
-        bytes,
-        picked.name,
+        conversationId, senderId, bytes, picked.name,
       );
       if (mounted) {
-        widget.appState.sendMessage(
-          conversationId,
-          '📷 ${picked.name}',
+        ref.read(chatProvider.notifier).sendMessage(
+          conversationId, '📷 ${picked.name}',
+          senderProfileId: senderId,
           contentType: ContentType.image,
           mediaUrl: url,
         );
+        _scrollToBottom();
       }
     } catch (e) {
       debugPrint('Failed to upload image: $e');
@@ -653,123 +627,22 @@ class _ChatScreenState extends State<ChatScreen> {
     final bytes = file.bytes;
     if (bytes == null) return;
     try {
+      final senderId = ref.read(profileProvider).activeProfile?.id ?? 'unknown';
       final url = await StorageService.instance.uploadChatMedia(
-        conversationId,
-        widget.appState.activeProfile?.id ?? 'unknown',
-        bytes,
-        file.name,
+        conversationId, senderId, bytes, file.name,
       );
       if (mounted) {
-        widget.appState.sendMessage(
-          conversationId,
-          '📎 ${file.name}',
+        ref.read(chatProvider.notifier).sendMessage(
+          conversationId, '📎 ${file.name}',
+          senderProfileId: senderId,
           contentType: ContentType.file,
           mediaUrl: url,
         );
+        _scrollToBottom();
       }
     } catch (e) {
       debugPrint('Failed to upload file: $e');
     }
-  }
-}
-
-class _ConversationTile extends StatelessWidget {
-  final String displayName;
-  final String? photoUrl;
-  final String lastMessage;
-  final DateTime? lastTime;
-  final int unreadCount;
-  final VoidCallback onTap;
-
-  const _ConversationTile({
-    required this.displayName,
-    this.photoUrl,
-    required this.lastMessage,
-    this.lastTime,
-    this.unreadCount = 0,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
-          child: Row(
-            children: [
-              ClipRRect(
-                borderRadius: BorderRadius.circular(22),
-                child: Image.network(
-                  photoUrl ?? '',
-                  width: 44,
-                  height: 44,
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, _, _) => const CircleAvatar(radius: 22, child: Icon(Icons.person)),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            displayName,
-                            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.slate800),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        if (lastTime != null)
-                          Text(
-                            formatTime(lastTime!),
-                            style: const TextStyle(fontSize: 9, color: AppColors.slate400),
-                          ),
-                      ],
-                    ),
-                    const SizedBox(height: 3),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            lastMessage,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: unreadCount > 0 ? FontWeight.w700 : FontWeight.w500,
-                              color: unreadCount > 0 ? AppColors.slate800 : AppColors.slate400,
-                            ),
-                          ),
-                        ),
-                        if (unreadCount > 0) ...[
-                          const SizedBox(width: 6),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: AppColors.teal600,
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: Text(
-                              '$unreadCount',
-                              style: const TextStyle(fontSize: 9, fontWeight: FontWeight.w800, color: Colors.white),
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
   }
 }
 

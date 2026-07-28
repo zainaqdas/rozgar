@@ -1,26 +1,25 @@
 import 'package:flutter/material.dart';
-import '../../providers/app_state.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../providers/providers.dart';
 import '../../theme/app_theme.dart';
 
-class RatingModal extends StatefulWidget {
-  final AppState appState;
+class RatingModal extends ConsumerStatefulWidget {
   final String jobId;
   final String revieweeProfileId;
   final VoidCallback onClose;
 
   const RatingModal({
     super.key,
-    required this.appState,
     required this.jobId,
     required this.revieweeProfileId,
     required this.onClose,
   });
 
   @override
-  State<RatingModal> createState() => _RatingModalState();
+  ConsumerState<RatingModal> createState() => _RatingModalState();
 }
 
-class _RatingModalState extends State<RatingModal> {
+class _RatingModalState extends ConsumerState<RatingModal> {
   int _rating = 5;
   final _commentController = TextEditingController(
     text: 'Very punctual, reliable, and clean work!',
@@ -34,8 +33,13 @@ class _RatingModalState extends State<RatingModal> {
 
   @override
   Widget build(BuildContext context) {
-    final revieweeData =
-        widget.appState.getPublicProfile(widget.revieweeProfileId);
+    final profile = ref.watch(profileProvider);
+    final workers = ref.read(workerProvider);
+    final revieweeData = workers.getPublicProfile(
+      widget.revieweeProfileId,
+      profile.workerProfile,
+      profile.workerDetails,
+    );
 
     return Stack(
       children: [
@@ -61,99 +65,104 @@ class _RatingModalState extends State<RatingModal> {
             child: SingleChildScrollView(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment:
-                    CrossAxisAlignment.start,
                 children: [
-                  const Text(
-                    'Rate Service & Job Experience',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w800,
-                      color: AppColors.slate800,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  const Text(
-                    'Your review builds trust in the Lahore Rozgar community.',
-                    style: TextStyle(
-                      fontSize: 10,
-                      fontWeight: FontWeight.w500,
-                      color: AppColors.slate500,
-                    ),
+                  // Header
+                  Row(
+                    children: [
+                      const Icon(Icons.star_rate_rounded,
+                          size: 24, color: AppColors.amber500),
+                      const SizedBox(width: 8),
+                      const Expanded(
+                        child: Text(
+                          'Rate Your Experience',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w800,
+                            color: AppColors.slate800,
+                          ),
+                        ),
+                      ),
+                      GestureDetector(
+                        onTap: widget.onClose,
+                        child: const Icon(Icons.close,
+                            size: 20, color: AppColors.slate400),
+                      ),
+                    ],
                   ),
                   const SizedBox(height: 16),
 
                   // Reviewee info
-                  if (revieweeData?.profile != null) ...[
+                  if (revieweeData != null) ...[
                     Row(
                       children: [
-                        ClipRRect(
-                          borderRadius:
-                              BorderRadius.circular(20),
-                          child: Image.network(
-                            revieweeData!.profile
-                                .profilePhotoUrl,
-                            width: 40,
-                            height: 40,
-                            fit: BoxFit.cover,
-                            errorBuilder: (_, _, _) =>
-                                const CircleAvatar(
-                              radius: 20,
-                              child: Icon(Icons.person),
-                            ),
+                        Container(
+                          width: 44,
+                          height: 44,
+                          decoration: BoxDecoration(
+                            color: AppColors.teal50,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: AppColors.teal200),
                           ),
-                        ),
-                        const SizedBox(width: 10),
-                        Column(
-                          crossAxisAlignment:
-                              CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              revieweeData
-                                  .profile.displayName,
+                          child: Center(
+                            child: Text(
+                              revieweeData.profile.displayName.isNotEmpty
+                                  ? revieweeData.profile.displayName[0]
+                                      .toUpperCase()
+                                  : '?',
                               style: const TextStyle(
-                                fontSize: 12,
+                                fontSize: 18,
                                 fontWeight: FontWeight.w800,
-                                color: AppColors.slate800,
-                              ),
-                            ),
-                            Text(
-                              revieweeData.profile.profileType
-                                  .name,
-                              style: const TextStyle(
-                                fontSize: 10,
-                                fontWeight: FontWeight.w700,
                                 color: AppColors.teal700,
                               ),
                             ),
-                          ],
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment:
+                                CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                revieweeData.profile.displayName,
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w700,
+                                  color: AppColors.slate800,
+                                ),
+                              ),
+                              const Text(
+                                'How was the work quality?',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: AppColors.slate500,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ],
                     ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 20),
                   ],
 
-                  // Star Rating
+                  // Star rating
                   Row(
-                    mainAxisAlignment:
-                        MainAxisAlignment.center,
-                    children: List.generate(5, (i) {
-                      final starNum = i + 1;
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: List.generate(5, (index) {
+                      final starValue = index + 1;
                       return GestureDetector(
-                        onTap: () => setState(
-                            () => _rating = starNum),
+                        onTap: () =>
+                            setState(() => _rating = starValue),
                         child: Padding(
                           padding:
-                              const EdgeInsets.symmetric(
-                                  horizontal: 4),
+                              const EdgeInsets.symmetric(horizontal: 4),
                           child: Icon(
-                            starNum <= _rating
+                            starValue <= _rating
                                 ? Icons.star
                                 : Icons.star_border,
                             size: 36,
-                            color: starNum <= _rating
-                                ? AppColors.amber400
-                                : AppColors.slate300,
+                            color: AppColors.amber500,
                           ),
                         ),
                       );
@@ -177,7 +186,7 @@ class _RatingModalState extends State<RatingModal> {
                     width: double.maxFinite,
                     child: ElevatedButton(
                       onPressed: () {
-                        widget.appState.addReview(
+                        ref.read(profileProvider.notifier).addReview(
                           widget.jobId,
                           widget.revieweeProfileId,
                           _rating,

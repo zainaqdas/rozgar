@@ -107,14 +107,12 @@ GoRouter _buildRouter(AppState appState) {
           GoRoute(
             path: '/chat',
             builder: (context, state) => ChatScreen(
-              appState: appState,
               targetWorkerProfileId: state.extra as String?,
               onBack: () => context.pop(),
               onJobCompleteClick: (jobId) {
                 showDialog(
                   context: context,
                   builder: (_) => RatingModal(
-                    appState: appState,
                     jobId: jobId,
                     revieweeProfileId: state.extra as String? ?? '',
                     onClose: () => Navigator.of(context).pop(),
