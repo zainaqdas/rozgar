@@ -61,7 +61,6 @@ GoRouter _buildRouter(AppState appState) {
           final step =
               int.tryParse(state.uri.queryParameters['step'] ?? '') ?? 0;
           return AuthScreen(
-            appState: appState,
             onAuthComplete: () =>
                 context.go(_defaultHome(appState) ?? '/employer/home'),
             initialStep: step,

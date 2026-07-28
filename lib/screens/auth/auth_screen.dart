@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
-import '../../providers/app_state.dart';
+import '../../providers/providers.dart';
 import '../../services/ai_service.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/translations.dart';
@@ -10,8 +11,7 @@ import '../../models/profile.dart';
 import '../../widgets/location_pin_drop.dart';
 import '../../utils/geo.dart';
 
-class AuthScreen extends StatefulWidget {
-  final AppState appState;
+class AuthScreen extends ConsumerStatefulWidget {
   final VoidCallback onAuthComplete;
 
   /// If set, skip directly to this step (e.g. 2 for profile choice after email confirmation).
@@ -19,16 +19,15 @@ class AuthScreen extends StatefulWidget {
 
   const AuthScreen({
     super.key,
-    required this.appState,
     required this.onAuthComplete,
     this.initialStep = 0,
   });
 
   @override
-  State<AuthScreen> createState() => _AuthScreenState();
+  ConsumerState<AuthScreen> createState() => _AuthScreenState();
 }
 
-class _AuthScreenState extends State<AuthScreen> {
+class _AuthScreenState extends ConsumerState<AuthScreen> {
   late int _step; // 0: contact, 1: otp, 2: profile_choice, 3: onboarding
   bool _isPhone = true;
 
@@ -121,7 +120,7 @@ class _AuthScreenState extends State<AuthScreen> {
         height: MediaQuery.of(context).size.height * 0.75,
         child: LocationPinDrop(
           initialLocation: _homeLocation.address.isNotEmpty ? _homeLocation : null,
-          language: widget.appState.language,
+          language: ref.watch(settingsProvider).language,
           confirmBtnText: 'Set This Location',
           onClose: () => Navigator.pop(ctx),
           onConfirmLocation: (loc) {
@@ -148,7 +147,7 @@ class _AuthScreenState extends State<AuthScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final lang = widget.appState.language;
+    final lang = ref.watch(settingsProvider).language;
     return Scaffold(
       backgroundColor: AppColors.slate50,
       body: SafeArea(
@@ -257,7 +256,7 @@ class _AuthScreenState extends State<AuthScreen> {
         // Language toggle
         GestureDetector(
           onTap: () {
-            widget.appState.setLanguage(
+            ref.read(settingsProvider.notifier).setLanguage(
               lang == LanguageOption.en
                   ? LanguageOption.ur
                   : LanguageOption.en,
@@ -506,7 +505,7 @@ class _AuthScreenState extends State<AuthScreen> {
                     if (_isPhone) {
                       // Phone OTP flow
                       try {
-                        widget.appState.loginWithPhoneOrEmail(
+                        ref.read(authProvider.notifier).loginWithPhoneOrEmail(
                             _contactController.text);
                         if (mounted) setState(() => _step = 1);
                       } catch (e) {
@@ -520,7 +519,7 @@ class _AuthScreenState extends State<AuthScreen> {
                         _isAuthLoading = true;
                         _authError = null;
                       });
-                      final error = await widget.appState.signInWithEmail(
+                      final error = await ref.read(authProvider.notifier).signInSimple(
                         _contactController.text.trim(),
                         _passwordController.text,
                       );
@@ -839,7 +838,7 @@ class _AuthScreenState extends State<AuthScreen> {
     // Store name for the onboarding step
     _nameController.text = name;
 
-    final error = await widget.appState.signUpWithEmail(email, password);
+    final error = await ref.read(authProvider.notifier).signUpSimple(email, password);
     if (mounted) {
       if (error == null) {
         // Success — move to profile choice
@@ -890,7 +889,7 @@ class _AuthScreenState extends State<AuthScreen> {
                 _isAuthLoading = true;
                 _authError = null;
               });
-              final error = await widget.appState.sendPasswordResetEmail(email);
+              final error = await ref.read(authProvider.notifier).sendPasswordResetEmail(email);
               if (mounted) {
                 setState(() => _isAuthLoading = false);
                 if (error == null) {
@@ -982,8 +981,7 @@ class _AuthScreenState extends State<AuthScreen> {
           width: double.maxFinite,
           child: ElevatedButton(
             onPressed: () {
-              if (widget.appState
-                  .verifyOtp(_otpController.text)) {
+              if (ref.read(authProvider.notifier).verifyOtp(_otpController.text)) {
                 setState(() => _step = 2);
               }
             },
@@ -1347,7 +1345,8 @@ class _AuthScreenState extends State<AuthScreen> {
             child: ElevatedButton(
               onPressed: () {
                 if (isWorker) {
-                  widget.appState.completeWorkerOnboarding(
+                  ref.read(profileProvider.notifier).completeWorkerOnboarding(
+                    authId: ref.read(authProvider).authIdentity?.id ?? '',
                     displayName: _nameController.text,
                     categoryIds: [_selectedCategoryId],
                     bio: _bioController.text,
@@ -1355,7 +1354,8 @@ class _AuthScreenState extends State<AuthScreen> {
                     homeLocation: _homeLocation,
                   );
                 } else {
-                  widget.appState.completeEmployerOnboarding(
+                  ref.read(profileProvider.notifier).completeEmployerOnboarding(
+                    authId: ref.read(authProvider).authIdentity?.id ?? '',
                     displayName: _nameController.text,
                     homeLocation: _homeLocation,
                   );
