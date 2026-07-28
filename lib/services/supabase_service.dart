@@ -9,6 +9,7 @@ import '../models/notification_item.dart';
 import '../models/location_point.dart';
 import '../models/favorite.dart';
 import '../models/report.dart';
+import '../models/nearby_worker.dart';
 import 'supabase_config.dart';
 import '../utils/geo.dart';
 
@@ -194,7 +195,7 @@ class SupabaseService {
 
   /// Fetch nearby workers using PostGIS ST_DWithin RPC.
   /// Falls back to client-side Haversine if RPC fails.
-  Future<List<Map<String, dynamic>>> getNearbyWorkers({
+  Future<List<NearbyWorker>> getNearbyWorkers({
     required LocationPoint employerLocation,
     required double radiusKm,
     List<String> categoryIds = const [],
@@ -207,7 +208,7 @@ class SupabaseService {
         'p_category_ids': categoryIds,
       });
       return (response as List)
-          .map((w) => Map<String, dynamic>.from(w as Map))
+          .map((w) => NearbyWorker.fromJson(Map<String, dynamic>.from(w as Map)))
           .toList();
     } catch (e) {
       debugPrint('nearby_workers RPC failed, falling back to client-side: $e');
@@ -219,7 +220,7 @@ class SupabaseService {
     }
   }
 
-  Future<List<Map<String, dynamic>>> _getNearbyWorkersFallback({
+  Future<List<NearbyWorker>> _getNearbyWorkersFallback({
     required LocationPoint employerLocation,
     required double radiusKm,
     required List<String> categoryIds,
@@ -246,15 +247,18 @@ class SupabaseService {
         lat2: employerLocation.lat,
         lng2: employerLocation.lng,
       );
-      return <String, dynamic>{
-        'profile_id': w.profile.id,
-        'display_name': w.profile.displayName,
-        'category_ids': w.details.categoryIds,
-        'bio': w.details.bio,
-        'average_rating': w.details.averageRating,
-        'total_jobs_completed': w.details.totalJobsCompleted,
-        'distance_km': dist,
-      };
+      return NearbyWorker(
+        profileId: w.profile.id,
+        displayName: w.profile.displayName,
+        categoryIds: w.details.categoryIds,
+        bio: w.details.bio,
+        averageRating: w.details.averageRating,
+        totalJobsCompleted: w.details.totalJobsCompleted,
+        distanceKm: dist,
+        lat: w.details.currentLocation.lat,
+        lng: w.details.currentLocation.lng,
+        profilePhotoUrl: w.profile.profilePhotoUrl,
+      );
     }).toList();
   }
 

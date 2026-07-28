@@ -2,12 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
 import '../../providers/providers.dart';
-import '../../providers/worker_provider.dart' show WorkerEntry;
+import '../../models/nearby_worker.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/geo.dart';
 import '../../data/categories.dart';
-import '../../models/job.dart';
 import '../../services/map_service.dart';
+import '../../services/supabase_service.dart';
 import '../../widgets/rozgar_map.dart';
 
 class NearbyWorkersMap extends ConsumerStatefulWidget {
@@ -26,9 +26,18 @@ class NearbyWorkersMap extends ConsumerStatefulWidget {
 
 class _NearbyWorkersMapState extends ConsumerState<NearbyWorkersMap> {
   String _selectedCategoryFilter = 'all';
-  WorkerEntry? _selectedWorker;
+  NearbyWorker? _selectedWorker;
   final RozgarMapController _mapController = RozgarMapController();
   bool _isLocating = false;
+  bool _isLoading = true;
+  String? _loadError;
+  List<NearbyWorker> _nearbyWorkers = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadNearbyWorkers();
+  }
 
   @override
   void dispose() {
@@ -36,15 +45,48 @@ class _NearbyWorkersMapState extends ConsumerState<NearbyWorkersMap> {
     super.dispose();
   }
 
-  List<WorkerEntry> _getFilteredWorkers() {
-    final workers = ref.watch(workerProvider).allWorkers;
-    return workers.where((w) {
-      if (!w.details.isOnlineForMap) return false;
-      if (_selectedCategoryFilter == 'all') return true;
-      return w.details.categoryIds.any(
-        (cat) => cat.contains(_selectedCategoryFilter) || _selectedCategoryFilter.contains(cat),
+  Future<void> _loadNearbyWorkers() async {
+    final profileNotifier = ref.read(profileProvider);
+    final empLocation = profileNotifier.employerProfile?.homeLocation;
+
+    if (empLocation == null) {
+      setState(() {
+        _isLoading = false;
+        _loadError = 'Set your home location to find nearby workers.';
+      });
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+      _loadError = null;
+    });
+
+    try {
+      final categoryIds = _selectedCategoryFilter == 'all'
+          ? <String>[]
+          : [_selectedCategoryFilter];
+
+      final workers = await SupabaseService.instance.getNearbyWorkers(
+        employerLocation: empLocation,
+        radiusKm: 15,
+        categoryIds: categoryIds,
       );
-    }).toList();
+
+      if (mounted) {
+        setState(() {
+          _nearbyWorkers = workers;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _loadError = 'Failed to load nearby workers.';
+          _isLoading = false;
+        });
+      }
+    }
   }
 
   Future<void> _recenterGps() async {
@@ -80,16 +122,14 @@ class _NearbyWorkersMapState extends ConsumerState<NearbyWorkersMap> {
   Widget build(BuildContext context) {
     final profileNotifier = ref.watch(profileProvider);
     final empLocation = profileNotifier.employerProfile?.homeLocation;
-    final filteredWorkers = _getFilteredWorkers();
 
-    final markers = filteredWorkers.map((w) {
-      final loc = w.details.currentLocation;
+    final markers = _nearbyWorkers.map((w) {
       return MapMarker(
-        id: w.profile.id,
-        lat: loc.lat,
-        lng: loc.lng,
-        title: w.profile.displayName,
-        snippet: '${w.details.averageRating} ★ · ${w.details.totalJobsCompleted} jobs',
+        id: w.profileId,
+        lat: w.lat,
+        lng: w.lng,
+        title: w.displayName,
+        snippet: '${w.averageRating.toStringAsFixed(1)} ★ · ${w.totalJobsCompleted} jobs',
         onTap: () => setState(() => _selectedWorker = w),
       );
     }).toList();
@@ -121,7 +161,10 @@ class _NearbyWorkersMapState extends ConsumerState<NearbyWorkersMap> {
                 _FilterChip(
                   label: 'All',
                   isActive: _selectedCategoryFilter == 'all',
-                  onTap: () => setState(() => _selectedCategoryFilter = 'all'),
+                  onTap: () {
+                    setState(() => _selectedCategoryFilter = 'all');
+                    _loadNearbyWorkers();
+                  },
                 ),
                 const SizedBox(width: 6),
                 ...seededCategories.map((cat) => Padding(
@@ -129,7 +172,10 @@ class _NearbyWorkersMapState extends ConsumerState<NearbyWorkersMap> {
                   child: _FilterChip(
                     label: cat.nameEn,
                     isActive: _selectedCategoryFilter == cat.id,
-                    onTap: () => setState(() => _selectedCategoryFilter = cat.id),
+                    onTap: () {
+                      setState(() => _selectedCategoryFilter = cat.id);
+                      _loadNearbyWorkers();
+                    },
                   ),
                 )),
               ],
@@ -175,15 +221,67 @@ class _NearbyWorkersMapState extends ConsumerState<NearbyWorkersMap> {
                 const Icon(Icons.people, size: 14, color: AppColors.teal600),
                 const SizedBox(width: 6),
                 Text(
-                  '${filteredWorkers.length} workers nearby',
-                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.slate700),
+                  '${_nearbyWorkers.length} workers nearby',
+                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.slate700),
                 ),
               ],
             ),
           ),
         ),
 
-        // Selected worker bottom sheet
+        // Loading indicator
+        if (_isLoading)
+          const Positioned.fill(
+            child: ColoredBox(
+              color: Colors.black26,
+              child: Center(child: CircularProgressIndicator(color: AppColors.teal600)),
+            ),
+          ),
+
+        // Error state
+        if (_loadError != null && !_isLoading)
+          Positioned(
+            left: 24,
+            right: 24,
+            bottom: 100,
+            child: Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.1), blurRadius: 12, offset: const Offset(0, 4))],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.error_outline, size: 32, color: AppColors.rose500),
+                  const SizedBox(height: 8),
+                  Text(
+                    _loadError!,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(fontSize: 13, color: AppColors.slate600),
+                  ),
+                  const SizedBox(height: 12),
+                  GestureDetector(
+                    onTap: _loadNearbyWorkers,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: AppColors.teal600,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Text(
+                        'Retry',
+                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Colors.white),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+        // Bottom sheet for selected worker
         if (_selectedWorker != null)
           Positioned(
             left: 0,
@@ -192,21 +290,18 @@ class _NearbyWorkersMapState extends ConsumerState<NearbyWorkersMap> {
             child: _WorkerBottomSheet(
               worker: _selectedWorker!,
               onClose: () => setState(() => _selectedWorker = null),
-              onChat: () => widget.onOpenChat(_selectedWorker!.profile.id),
+              onChat: () {
+                widget.onOpenChat(_selectedWorker!.profileId);
+                setState(() => _selectedWorker = null);
+              },
               onProfile: widget.onOpenProfile != null
-                  ? () => widget.onOpenProfile!(_selectedWorker!.profile.id)
+                  ? () {
+                      widget.onOpenProfile!(_selectedWorker!.profileId);
+                      setState(() => _selectedWorker = null);
+                    }
                   : null,
               onInvite: () {
-                final jobs = ref.read(jobProvider).jobs;
-                final openJob = jobs.where((j) => j.status == JobStatus.open).firstOrNull;
-                if (openJob != null) {
-                  final employerId = ref.read(profileProvider).employerProfile?.id ?? '';
-                  ref.read(coordinatorProvider.notifier).hireWorker(
-                    jobId: openJob.id,
-                    workerProfileId: _selectedWorker!.profile.id,
-                    employerProfileId: employerId,
-                  );
-                }
+                // TODO: Navigate to post job with pre-selected worker
                 setState(() => _selectedWorker = null);
               },
             ),
@@ -253,7 +348,7 @@ class _FilterChip extends StatelessWidget {
 }
 
 class _WorkerBottomSheet extends StatelessWidget {
-  final WorkerEntry worker;
+  final NearbyWorker worker;
   final VoidCallback onClose;
   final VoidCallback onChat;
   final VoidCallback? onProfile;
@@ -305,8 +400,8 @@ class _WorkerBottomSheet extends StatelessWidget {
                 ),
                 child: Center(
                   child: Text(
-                    worker.profile.displayName.isNotEmpty
-                        ? worker.profile.displayName[0].toUpperCase()
+                    worker.displayName.isNotEmpty
+                        ? worker.displayName[0].toUpperCase()
                         : '?',
                     style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: AppColors.teal700),
                   ),
@@ -317,41 +412,18 @@ class _WorkerBottomSheet extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
-                      children: [
-                        Text(
-                          worker.profile.displayName,
-                          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: AppColors.slate800),
-                        ),
-                        if (worker.profile.isVerified) ...[
-                          const SizedBox(width: 4),
-                          const Icon(Icons.verified, size: 14, color: AppColors.teal600),
-                        ],
-                      ],
+                    Text(
+                      worker.displayName,
+                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.slate800),
                     ),
                     const SizedBox(height: 2),
                     Row(
                       children: [
-                        const Icon(Icons.star, size: 12, color: AppColors.amber500),
-                        const SizedBox(width: 3),
+                        const Icon(Icons.star, size: 14, color: AppColors.amber400),
+                        const SizedBox(width: 4),
                         Text(
-                          '${worker.details.averageRating}',
-                          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.slate700),
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          '${worker.details.totalJobsCompleted} jobs',
-                          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500, color: AppColors.slate500),
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          formatDistance(calculateDistanceKm(
-                            lat1: worker.details.currentLocation.lat,
-                            lng1: worker.details.currentLocation.lng,
-                            lat2: 31.5204,
-                            lng2: 74.3587,
-                          )),
-                          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500, color: AppColors.slate500),
+                          '${worker.averageRating.toStringAsFixed(1)} · ${worker.totalJobsCompleted} jobs · ${worker.distanceKm.toStringAsFixed(1)} km',
+                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.slate500),
                         ),
                       ],
                     ),
@@ -364,28 +436,19 @@ class _WorkerBottomSheet extends StatelessWidget {
               ),
             ],
           ),
+          if (worker.bio.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Text(
+              worker.bio,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 12, color: AppColors.slate600, height: 1.4),
+            ),
+          ],
           const SizedBox(height: 14),
           // Action buttons
           Row(children: [
-            Expanded(
-              child: GestureDetector(
-                onTap: onChat,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(vertical: 10),
-                  decoration: BoxDecoration(
-                    color: AppColors.teal600,
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: const Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                    Icon(Icons.chat_bubble_outline, size: 14, color: Colors.white),
-                    SizedBox(width: 4),
-                    Text('Chat', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Colors.white)),
-                  ]),
-                ),
-              ),
-            ),
             if (onProfile != null) ...[
-              const SizedBox(width: 6),
               Expanded(
                 child: GestureDetector(
                   onTap: onProfile,
@@ -405,7 +468,26 @@ class _WorkerBottomSheet extends StatelessWidget {
                   ),
                 ),
               ),
+              const SizedBox(width: 6),
             ],
+            Expanded(
+              child: GestureDetector(
+                onTap: onChat,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: AppColors.teal600.withValues(alpha: 0.4)),
+                    color: AppColors.teal50,
+                  ),
+                  child: const Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                    Icon(Icons.chat_bubble_outline, size: 14, color: AppColors.teal700),
+                    SizedBox(width: 4),
+                    Text('Chat', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: AppColors.teal700)),
+                  ]),
+                ),
+              ),
+            ),
             const SizedBox(width: 6),
             Expanded(
               child: GestureDetector(
