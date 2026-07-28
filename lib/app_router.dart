@@ -93,7 +93,6 @@ GoRouter _buildRouter(AppState appState) {
           GoRoute(
             path: '/employer/post-job',
             builder: (context, state) => PostJobFlow(
-              appState: appState,
               onComplete: () =>
                   context.go(_defaultHome(appState) ?? '/employer/home'),
             ),

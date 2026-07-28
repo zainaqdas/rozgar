@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import '../../providers/app_state.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../providers/providers.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/translations.dart';
 import '../../utils/formatters.dart';
@@ -9,21 +10,19 @@ import '../../models/location_point.dart';
 import '../../services/ai_service.dart';
 import '../../widgets/location_pin_drop.dart';
 
-class PostJobFlow extends StatefulWidget {
-  final AppState appState;
+class PostJobFlow extends ConsumerStatefulWidget {
   final VoidCallback onComplete;
 
   const PostJobFlow({
     super.key,
-    required this.appState,
     required this.onComplete,
   });
 
   @override
-  State<PostJobFlow> createState() => _PostJobFlowState();
+  ConsumerState<PostJobFlow> createState() => _PostJobFlowState();
 }
 
-class _PostJobFlowState extends State<PostJobFlow> {
+class _PostJobFlowState extends ConsumerState<PostJobFlow> {
   int _step = 1; // 1-4
 
   final _descController = TextEditingController();
@@ -100,10 +99,10 @@ class _PostJobFlowState extends State<PostJobFlow> {
   }
 
   void _postJob() {
-    final empProfile = widget.appState.employerProfile;
+    final empProfile = ref.read(profileProvider).employerProfile;
     if (empProfile == null) return;
 
-    widget.appState.addJob(
+    ref.read(jobProvider.notifier).addJob(
       employerProfileId: empProfile.id,
       categoryId: _selectedCategoryId,
       title: _title.isNotEmpty ? _title : _descController.text,
@@ -129,7 +128,7 @@ class _PostJobFlowState extends State<PostJobFlow> {
 
   @override
   Widget build(BuildContext context) {
-    final lang = widget.appState.language;
+    final lang = ref.watch(settingsProvider).language;
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
