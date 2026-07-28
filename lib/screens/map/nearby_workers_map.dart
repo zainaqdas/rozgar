@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
 import '../../providers/providers.dart';
-import '../../providers/app_state.dart' show WorkerEntry;
+import '../../providers/worker_provider.dart' show WorkerEntry;
 import '../../theme/app_theme.dart';
 import '../../utils/geo.dart';
 import '../../data/categories.dart';

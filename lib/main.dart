@@ -4,8 +4,6 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'providers/providers.dart';
-import 'providers/app_state.dart';
-import 'models/profile.dart';
 import 'theme/app_theme.dart';
 import 'utils/translations.dart';
 import 'services/supabase_config.dart';
@@ -56,84 +54,55 @@ class RozgarApp extends ConsumerStatefulWidget {
 }
 
 class _RozgarAppState extends ConsumerState<RozgarApp> {
-  bool _isLoading = true;
+  bool _isInitialized = false;
 
   @override
   void initState() {
     super.initState();
-    // Defer to a microtask so provider reads don't fire during the
-    // mount/build phase. On web (DDC) a synchronous ref.read() here
-    // triggers ChangeNotifier creation + notifyListeners() before the
-    // first frame completes, causing the "!_dirty" assertion.
-    Future.microtask(_initialize);
+    _initialize();
   }
 
   Future<void> _initialize() async {
     try {
-      final appState = ref.read(appStateProvider.notifier);
-      await appState.initialize();
-      _syncProviders(appState);
+      await ref.read(coordinatorProvider.notifier).initialize();
     } catch (e) {
       debugPrint('App initialization failed: $e');
     }
-    if (mounted) {
-      setState(() => _isLoading = false);
-    }
-  }
-
-  /// Bridge: copy AppState data into domain providers during migration.
-  /// Removed in Phase 3C when AppState is deleted.
-  void _syncProviders(AppState appState) {
-    final profiles = <Profile>[];
-    if (appState.employerProfile != null) profiles.add(appState.employerProfile!);
-    if (appState.workerProfile != null) profiles.add(appState.workerProfile!);
-    ref.read(profileProvider.notifier).setProfiles(profiles, appState.workerDetails);
-    ref.read(jobProvider.notifier).setJobs(appState.jobs);
-    ref.read(jobProvider.notifier).setApplications(appState.applications);
-    ref.read(chatProvider.notifier).setConversations(appState.conversations);
-    ref.read(chatProvider.notifier).setMessages(appState.messages);
-    ref.read(notificationProvider.notifier).setNotifications(appState.notifications);
-    ref.read(workerProvider.notifier).setWorkers(appState.allWorkers);
-    ref.read(settingsProvider.notifier).setLanguage(appState.language);
-    ref.read(profileProvider.notifier).setReviews(appState.reviews);
+    if (mounted) setState(() => _isInitialized = true);
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_isLoading) {
-      return MaterialApp(
-        debugShowCheckedModeBanner: false,
-        theme: AppTheme.lightTheme,
-        home: const _SplashLoader(),
-      );
-    }
-
-    final appState = ref.watch(appStateProvider);
+    final lang = ref.watch(settingsProvider).language;
     final router = ref.watch(routerProvider);
 
     return MaterialApp.router(
-      title: 'Rozgar - Local Services Marketplace',
+      title: 'Rozgar',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.lightTheme,
-      locale: appState.language == LanguageOption.ur
-          ? const Locale('ur', 'PK')
-          : const Locale('en', 'US'),
-      supportedLocales: const [
-        Locale('en', 'US'),
-        Locale('ur', 'PK'),
-      ],
+      locale: Locale(lang == LanguageOption.ur ? 'ur' : 'en'),
       localizationsDelegates: const [
         GlobalMaterialLocalizations.delegate,
         GlobalWidgetsLocalizations.delegate,
         GlobalCupertinoLocalizations.delegate,
       ],
+      supportedLocales: const [
+        Locale('en'),
+        Locale('ur'),
+      ],
       routerConfig: router,
+      builder: (context, child) {
+        if (!_isInitialized) {
+          return const _SplashScreen();
+        }
+        return child ?? const SizedBox.shrink();
+      },
     );
   }
 }
 
-class _SplashLoader extends StatelessWidget {
-  const _SplashLoader();
+class _SplashScreen extends StatelessWidget {
+  const _SplashScreen();
 
   @override
   Widget build(BuildContext context) {

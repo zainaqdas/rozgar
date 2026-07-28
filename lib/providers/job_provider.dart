@@ -5,7 +5,7 @@ import '../models/conversation.dart';
 import '../models/notification_item.dart';
 import '../models/location_point.dart';
 import '../services/supabase_service.dart';
-import '../providers/app_state.dart' show WorkerEntry;
+import '../providers/worker_provider.dart' show WorkerEntry;
 import '../utils/geo.dart';
 import '../utils/sanitize.dart';
 import 'package:uuid/uuid.dart';

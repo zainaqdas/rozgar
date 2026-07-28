@@ -1,7 +1,12 @@
 import 'package:flutter/foundation.dart';
 import '../models/profile.dart';
-import '../providers/app_state.dart';
 import '../services/supabase_service.dart';
+
+class WorkerEntry {
+  final Profile profile;
+  final WorkerDetails details;
+  const WorkerEntry({required this.profile, required this.details});
+}
 
 class WorkerNotifier extends ChangeNotifier {
   final SupabaseService _supabase = SupabaseService.instance;
