@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import '../../providers/app_state.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../providers/providers.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/translations.dart';
 import '../../utils/formatters.dart';
@@ -8,8 +9,7 @@ import '../../models/category.dart';
 import '../../models/profile.dart';
 import '../../widgets/animations.dart';
 
-class PublicProfileView extends StatelessWidget {
-  final AppState appState;
+class PublicProfileView extends ConsumerWidget {
   final Profile profile;
   final WorkerDetails workerDetails;
   final VoidCallback onBack;
@@ -18,7 +18,6 @@ class PublicProfileView extends StatelessWidget {
 
   const PublicProfileView({
     super.key,
-    required this.appState,
     required this.profile,
     required this.workerDetails,
     required this.onBack,
@@ -27,9 +26,9 @@ class PublicProfileView extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
-    final lang = appState.language;
-    final profileReviews = appState.reviews
+  Widget build(BuildContext context, WidgetRef ref) {
+    final lang = ref.watch(settingsProvider).language;
+    final profileReviews = ref.watch(profileProvider).reviews
         .where((r) => r.revieweeProfileId == profile.id)
         .toList();
     final categories = workerDetails.categoryIds

@@ -179,7 +179,6 @@ onOpenJobDetailsById: (jobId) => context.go('/job/$jobId'),
             );
           }
           return PublicProfileView(
-            appState: appState,
             profile: data.profile,
             workerDetails: data.workerDetails!,
             onBack: () => context.pop(),
