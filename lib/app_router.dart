@@ -129,7 +129,7 @@ GoRouter _buildRouter(AppState appState) {
           ),
           GoRoute(
             path: '/worker/earnings',
-            builder: (context, state) => EarningsScreen(appState: appState),
+            builder: (context, state) => const EarningsScreen(),
           ),
           GoRoute(
             path: '/profile',
