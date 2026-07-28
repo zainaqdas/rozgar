@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import '../../providers/app_state.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../providers/providers.dart';
 import '../../services/ai_service.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/translations.dart';
@@ -7,28 +8,20 @@ import '../../data/categories.dart';
 import '../../models/profile.dart';
 import '../../models/review.dart';
 
-class ProfileView extends StatefulWidget {
-  final AppState appState;
-
-  const ProfileView({super.key, required this.appState});
+class ProfileView extends ConsumerStatefulWidget {
+  const ProfileView({super.key});
 
   @override
-  State<ProfileView> createState() => _ProfileViewState();
+  ConsumerState<ProfileView> createState() => _ProfileViewState();
 }
 
-class _ProfileViewState extends State<ProfileView> {
+class _ProfileViewState extends ConsumerState<ProfileView> {
   final _cnicController = TextEditingController(text: '35201-1234567-1');
   bool _isVerifying = false;
   bool _cnicSuccess = false;
   final _bioController = TextEditingController();
   bool _isAiBioLoading = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _bioController.text =
-        widget.appState.workerDetails?.bio ?? '';
-  }
+  bool _bioInitialized = false;
 
   @override
   void dispose() {
@@ -39,14 +32,21 @@ class _ProfileViewState extends State<ProfileView> {
 
   @override
   Widget build(BuildContext context) {
-    final state = widget.appState;
-    final lang = state.language;
-    final profile = state.activeProfile;
-    final isWorker = state.activeProfileType == ProfileType.worker;
-    final details = state.workerDetails;
-    final profileReviews = state.reviews
+    final settings = ref.watch(settingsProvider);
+    final profileNotifier = ref.watch(profileProvider);
+    final lang = settings.language;
+    final profile = profileNotifier.activeProfile;
+    final isWorker = profileNotifier.activeProfileType == ProfileType.worker;
+    final details = profileNotifier.workerDetails;
+    final profileReviews = profileNotifier.reviews
         .where((r) => r.revieweeProfileId == profile?.id)
         .toList();
+
+    // Initialize bio controller once when worker details are available
+    if (!_bioInitialized && details != null) {
+      _bioController.text = details.bio;
+      _bioInitialized = true;
+    }
 
     if (profile == null) return const SizedBox.shrink();
 
@@ -92,7 +92,7 @@ class _ProfileViewState extends State<ProfileView> {
                   final newBio = result['bio'] as String? ?? '';
                   if (newBio.isNotEmpty) {
                     _bioController.text = newBio;
-                    state.updateWorkerBio(newBio);
+                    ref.read(profileProvider.notifier).updateWorkerBio(newBio);
                   }
                 } catch (e) {
                   debugPrint('AI bio generation failed: $e');
@@ -134,13 +134,15 @@ class _ProfileViewState extends State<ProfileView> {
           _SettingsSection(
             lang: lang,
             onLanguageToggle: () {
-              state.setLanguage(
+              ref.read(settingsProvider.notifier).setLanguage(
                 lang == LanguageOption.en
                     ? LanguageOption.ur
                     : LanguageOption.en,
               );
             },
-            onLogout: state.logout,
+            onLogout: () {
+              ref.read(coordinatorProvider.notifier).logout();
+            },
           ),
           const SizedBox(height: 32),
         ],
@@ -164,95 +166,87 @@ class _ProfileHeaderCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       width: double.maxFinite,
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: Colors.white,
+        gradient: LinearGradient(
+          colors: isWorker
+              ? [AppColors.amber600, AppColors.amber800]
+              : [AppColors.teal700, AppColors.teal900],
+        ),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.slate200),
       ),
-      child: Row(
+      child: Column(
         children: [
-          ClipRRect(
-            borderRadius: BorderRadius.circular(28),
-            child: Image.network(
-              profile.profilePhotoUrl,
-              width: 56,
-              height: 56,
-              fit: BoxFit.cover,
-              errorBuilder: (_, _, _) => const CircleAvatar(
-                radius: 28,
-                child: Icon(Icons.person, size: 28),
-              ),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        profile.displayName,
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w800,
-                          color: AppColors.slate800,
-                        ),
-                      ),
-                    ),
-                    if (cnicVerified)
-                      const Icon(Icons.check_circle,
-                          size: 16, color: AppColors.teal600),
-                  ],
-                ),
-                const SizedBox(height: 4),
-                Row(
-                  children: [
-                    const Icon(Icons.location_on_outlined,
-                        size: 14, color: AppColors.teal600),
-                    const SizedBox(width: 4),
-                    Expanded(
-                      child: Text(
-                        profile.homeLocation.address,
-                        style: const TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w500,
-                          color: AppColors.slate500,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
           Container(
-            padding: const EdgeInsets.symmetric(
-                horizontal: 10, vertical: 4),
+            width: 72,
+            height: 72,
             decoration: BoxDecoration(
-              color: isWorker
-                  ? AppColors.amber100
-                  : AppColors.teal50,
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(
-                color: isWorker
-                    ? AppColors.amber200
-                    : AppColors.teal200,
+              color: Colors.white.withValues(alpha: 0.2),
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.white.withValues(alpha: 0.4), width: 2),
+            ),
+            child: Center(
+              child: Text(
+                profile.displayName.isNotEmpty
+                    ? profile.displayName[0].toUpperCase()
+                    : '?',
+                style: const TextStyle(
+                  fontSize: 28,
+                  fontWeight: FontWeight.w900,
+                  color: Colors.white,
+                ),
               ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(
+                profile.displayName,
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w800,
+                  color: Colors.white,
+                ),
+              ),
+              if (cnicVerified) ...[
+                const SizedBox(width: 6),
+                const Icon(Icons.verified, size: 18, color: Colors.white),
+              ],
+            ],
+          ),
+          const SizedBox(height: 4),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.2),
+              borderRadius: BorderRadius.circular(12),
             ),
             child: Text(
-              isWorker ? 'WORKER' : 'EMPLOYER',
-              style: TextStyle(
-                fontSize: 9,
-                fontWeight: FontWeight.w800,
-                letterSpacing: 0.3,
-                color: isWorker
-                    ? AppColors.amber800
-                    : AppColors.teal800,
+              isWorker ? 'Worker' : 'Employer',
+              style: const TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w700,
+                color: Colors.white,
               ),
             ),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.location_on, size: 12, color: Colors.white70),
+              const SizedBox(width: 4),
+              Text(
+                profile.city,
+                style: const TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w500,
+                  color: Colors.white70,
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -273,19 +267,20 @@ class _CompletionMeter extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       width: double.maxFinite,
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: AppColors.slate50,
-        borderRadius: BorderRadius.circular(12),
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
         border: Border.all(color: AppColors.slate200),
       ),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
-                AppTranslations.t('profileCompletion', lang),
+                AppTranslations.t('activeProfile', lang),
                 style: const TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.w700,
@@ -295,9 +290,9 @@ class _CompletionMeter extends StatelessWidget {
               Text(
                 '${pct.toInt()}%',
                 style: const TextStyle(
-                  fontSize: 13,
+                  fontSize: 12,
                   fontWeight: FontWeight.w800,
-                  color: AppColors.teal700,
+                  color: AppColors.teal600,
                 ),
               ),
             ],
@@ -307,19 +302,9 @@ class _CompletionMeter extends StatelessWidget {
             borderRadius: BorderRadius.circular(4),
             child: LinearProgressIndicator(
               value: pct / 100,
-              backgroundColor: AppColors.slate200,
-              valueColor: const AlwaysStoppedAnimation(
-                  AppColors.teal600),
               minHeight: 6,
-            ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            AppTranslations.t('completeProfilePrompt', lang),
-            style: const TextStyle(
-              fontSize: 9,
-              fontWeight: FontWeight.w500,
-              color: AppColors.slate500,
+              backgroundColor: AppColors.slate100,
+              valueColor: const AlwaysStoppedAnimation<Color>(AppColors.teal600),
             ),
           ),
         ],
@@ -357,67 +342,81 @@ class _BioSection extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
-            mainAxisAlignment:
-                MainAxisAlignment.spaceBetween,
             children: [
+              const Icon(Icons.edit_note, size: 20, color: AppColors.teal600),
+              const SizedBox(width: 8),
               const Text(
-                'Worker Bio & Skill Intro',
+                'Professional Bio',
                 style: TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w800,
                   color: AppColors.slate800,
                 ),
               ),
+              const Spacer(),
               GestureDetector(
-                onTap: onAiBio,
-                child: Row(
-                  children: [
-                    Icon(
-                      Icons.auto_awesome,
-                      size: 14,
-                      color: isAiBioLoading
-                          ? AppColors.slate400
-                          : AppColors.amber600,
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      isAiBioLoading
-                          ? 'Writing...'
-                          : 'AI Bio Polish',
-                      style: TextStyle(
-                        fontSize: 10,
-                        fontWeight: FontWeight.w700,
-                        color: isAiBioLoading
-                            ? AppColors.slate400
-                            : AppColors.amber600,
+                onTap: isAiBioLoading ? null : onAiBio,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: AppColors.teal50,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: AppColors.teal200),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (isAiBioLoading)
+                        const SizedBox(
+                          width: 12,
+                          height: 12,
+                          child: CircularProgressIndicator(strokeWidth: 1.5),
+                        )
+                      else
+                        const Icon(Icons.auto_awesome, size: 12, color: AppColors.teal600),
+                      const SizedBox(width: 4),
+                      const Text(
+                        'AI Write',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.teal700,
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ],
           ),
           const SizedBox(height: 12),
-          Container(
-            width: double.maxFinite,
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: AppColors.slate50,
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: AppColors.slate200),
-            ),
-            child: Text(
-              '"$bio"',
-              style: const TextStyle(
-                fontSize: 11,
-                fontStyle: FontStyle.italic,
-                fontWeight: FontWeight.w500,
-                color: AppColors.slate700,
-                height: 1.5,
+          TextField(
+            controller: TextEditingController(text: bio),
+            onChanged: onBioChanged,
+            maxLines: 4,
+            decoration: InputDecoration(
+              hintText: 'Describe your skills and experience...',
+              hintStyle: const TextStyle(fontSize: 12, color: AppColors.slate400),
+              filled: true,
+              fillColor: AppColors.slate50,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: const BorderSide(color: AppColors.slate200),
               ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: const BorderSide(color: AppColors.slate200),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: const BorderSide(color: AppColors.teal600),
+              ),
+              contentPadding: const EdgeInsets.all(12),
             ),
+            style: const TextStyle(fontSize: 12, color: AppColors.slate700),
           ),
           const SizedBox(height: 12),
+          // Stats row
           Row(
             children: [
               Expanded(
@@ -426,12 +425,10 @@ class _BioSection extends StatelessWidget {
                   decoration: BoxDecoration(
                     color: AppColors.slate50,
                     borderRadius: BorderRadius.circular(10),
-                    border: Border.all(
-                        color: AppColors.slate200),
+                    border: Border.all(color: AppColors.slate200),
                   ),
                   child: Column(
-                    crossAxisAlignment:
-                        CrossAxisAlignment.start,
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const Text(
                         'Experience',
@@ -443,7 +440,7 @@ class _BioSection extends StatelessWidget {
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        '${details.yearsExperience} Years',
+                        '${details.yearsExperience} yrs',
                         style: const TextStyle(
                           fontSize: 13,
                           fontWeight: FontWeight.w800,
@@ -461,12 +458,10 @@ class _BioSection extends StatelessWidget {
                   decoration: BoxDecoration(
                     color: AppColors.slate50,
                     borderRadius: BorderRadius.circular(10),
-                    border: Border.all(
-                        color: AppColors.slate200),
+                    border: Border.all(color: AppColors.slate200),
                   ),
                   child: Column(
-                    crossAxisAlignment:
-                        CrossAxisAlignment.start,
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const Text(
                         'Avg Rating',
@@ -479,9 +474,7 @@ class _BioSection extends StatelessWidget {
                       const SizedBox(height: 2),
                       Row(
                         children: [
-                          const Icon(Icons.star,
-                              size: 12,
-                              color: AppColors.amber500),
+                          const Icon(Icons.star, size: 12, color: AppColors.amber500),
                           const SizedBox(width: 2),
                           Text(
                             '${details.averageRating} (${details.totalJobsCompleted} jobs)',
@@ -533,8 +526,7 @@ class _CnicSection extends StatelessWidget {
         children: [
           const Row(
             children: [
-              Icon(Icons.verified_user,
-                  size: 20, color: AppColors.teal600),
+              Icon(Icons.verified_user, size: 20, color: AppColors.teal600),
               SizedBox(width: 8),
               Text(
                 'NADRA / CNIC Identity Verification',
@@ -557,16 +549,15 @@ class _CnicSection extends StatelessWidget {
               ),
               child: const Row(
                 children: [
-                  Icon(Icons.check_circle,
-                      size: 16, color: AppColors.teal600),
+                  Icon(Icons.check_circle, size: 20, color: AppColors.teal600),
                   SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      'CNIC Verified Citizen. Verified trust badge active on profile.',
+                      'Identity Verified — You are a trusted member of the Rozgar community.',
                       style: TextStyle(
-                        fontSize: 10,
+                        fontSize: 11,
                         fontWeight: FontWeight.w600,
-                        color: AppColors.teal900,
+                        color: AppColors.teal800,
                       ),
                     ),
                   ),
@@ -574,49 +565,61 @@ class _CnicSection extends StatelessWidget {
               ),
             )
           else ...[
-            const Text(
-              'Submit your 13-digit Pakistani CNIC to earn a verified citizen badge.',
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w500,
-                color: AppColors.slate500,
+            TextField(
+              controller: cnicController,
+              decoration: InputDecoration(
+                hintText: 'XXXXX-XXXXXXX-X',
+                hintStyle: const TextStyle(fontSize: 12, color: AppColors.slate400),
+                filled: true,
+                fillColor: AppColors.slate50,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: const BorderSide(color: AppColors.slate200),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: const BorderSide(color: AppColors.slate200),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: const BorderSide(color: AppColors.teal600),
+                ),
+                contentPadding: const EdgeInsets.all(12),
               ),
+              style: const TextStyle(fontSize: 13, color: AppColors.slate700),
             ),
-            const SizedBox(height: 10),
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: cnicController,
-                    decoration: const InputDecoration(
-                      hintText: '35201-XXXXXXX-X',
-                    ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.maxFinite,
+              child: GestureDetector(
+                onTap: isVerifying ? null : onVerify,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  decoration: BoxDecoration(
+                    color: isVerifying ? AppColors.slate300 : AppColors.teal600,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Center(
+                    child: isVerifying
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : const Text(
+                            'Verify with NADRA',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.white,
+                            ),
+                          ),
                   ),
                 ),
-                const SizedBox(width: 8),
-                GestureDetector(
-                  onTap: isVerifying ? null : onVerify,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 14, vertical: 12),
-                    decoration: BoxDecoration(
-                      color: AppColors.teal600,
-                      borderRadius:
-                          BorderRadius.circular(10),
-                    ),
-                    child: Text(
-                      isVerifying
-                          ? 'Verifying...'
-                          : 'Submit',
-                      style: const TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                        color: Colors.white,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
+              ),
             ),
           ],
         ],
@@ -649,11 +652,10 @@ class _ReviewsSection extends StatelessWidget {
         children: [
           Row(
             children: [
-              const Icon(Icons.star,
-                  size: 16, color: AppColors.amber500),
+              const Icon(Icons.reviews_outlined, size: 20, color: AppColors.amber500),
               const SizedBox(width: 8),
               Text(
-                '${AppTranslations.t('reviews', lang)} (${reviews.length})',
+                'Reviews (${reviews.length})',
                 style: const TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w800,
@@ -664,71 +666,60 @@ class _ReviewsSection extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           if (reviews.isEmpty)
-            const Text(
-              'No reviews received yet for this active profile.',
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w500,
-                color: AppColors.slate500,
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 16),
+              child: Center(
+                child: Text(
+                  'No reviews yet',
+                  style: TextStyle(fontSize: 12, color: AppColors.slate400),
+                ),
               ),
             )
           else
-            ...reviews.map((rev) => Container(
-                  padding: const EdgeInsets.only(top: 8),
-                  decoration: const BoxDecoration(
-                    border: Border(
-                      top: BorderSide(
-                          color: AppColors.slate100),
-                    ),
-                  ),
-                  child: Column(
-                    crossAxisAlignment:
-                        CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        mainAxisAlignment:
-                            MainAxisAlignment.spaceBetween,
-                        children: [
-                          const Text(
-                            'Verified Client',
-                            style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w800,
-                              color: AppColors.slate800,
-                            ),
+            ...reviews.take(3).map((review) => Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppColors.slate50,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: AppColors.slate100),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        ...List.generate(5, (i) => Icon(
+                          i < review.rating ? Icons.star : Icons.star_border,
+                          size: 12,
+                          color: AppColors.amber500,
+                        )),
+                        const Spacer(),
+                        Text(
+                          '${review.rating}.0',
+                          style: const TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.slate500,
                           ),
-                          Row(
-                            children: [
-                              const Icon(Icons.star,
-                                  size: 12,
-                                  color: AppColors.amber500),
-                              const SizedBox(width: 2),
-                              Text(
-                                '${rev.rating}.0',
-                                style: const TextStyle(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w800,
-                                  color: AppColors.amber600,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        '"${rev.comment}"',
-                        style: const TextStyle(
-                          fontSize: 11,
-                          fontStyle: FontStyle.italic,
-                          fontWeight: FontWeight.w500,
-                          color: AppColors.slate700,
                         ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      review.comment,
+                      style: const TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w500,
+                        color: AppColors.slate600,
+                        height: 1.3,
                       ),
-                      const SizedBox(height: 8),
-                    ],
-                  ),
-                )),
+                    ),
+                  ],
+                ),
+              ),
+            )),
         ],
       ),
     );
@@ -750,7 +741,6 @@ class _SettingsSection extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       width: double.maxFinite,
-      padding: const EdgeInsets.all(8),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
@@ -794,13 +784,10 @@ class _SettingsTile extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Padding(
-        padding: const EdgeInsets.symmetric(
-            horizontal: 12, vertical: 14),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
         child: Row(
           children: [
-            Icon(icon,
-                size: 16,
-                color: color ?? AppColors.teal600),
+            Icon(icon, size: 16, color: color ?? AppColors.teal600),
             const SizedBox(width: 10),
             Expanded(
               child: Text(
@@ -812,8 +799,7 @@ class _SettingsTile extends StatelessWidget {
                 ),
               ),
             ),
-            const Icon(Icons.chevron_right,
-                size: 16, color: AppColors.slate400),
+            const Icon(Icons.chevron_right, size: 16, color: AppColors.slate400),
           ],
         ),
       ),

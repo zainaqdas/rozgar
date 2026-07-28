@@ -133,7 +133,7 @@ GoRouter _buildRouter(AppState appState) {
           ),
           GoRoute(
             path: '/profile',
-            builder: (context, state) => ProfileView(appState: appState),
+            builder: (context, state) => const ProfileView(),
           ),
         ],
       ),
