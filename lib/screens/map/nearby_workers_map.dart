@@ -1,31 +1,30 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
-import '../../providers/app_state.dart';
+import '../../providers/providers.dart';
+import '../../providers/app_state.dart' show WorkerEntry;
 import '../../theme/app_theme.dart';
 import '../../utils/geo.dart';
 import '../../data/categories.dart';
-import '../../models/location_point.dart';
 import '../../models/job.dart';
 import '../../services/map_service.dart';
 import '../../widgets/rozgar_map.dart';
 
-class NearbyWorkersMap extends StatefulWidget {
-  final AppState appState;
+class NearbyWorkersMap extends ConsumerStatefulWidget {
   final ValueChanged<String> onOpenChat;
   final ValueChanged<String>? onOpenProfile;
 
   const NearbyWorkersMap({
     super.key,
-    required this.appState,
     required this.onOpenChat,
     this.onOpenProfile,
   });
 
   @override
-  State<NearbyWorkersMap> createState() => _NearbyWorkersMapState();
+  ConsumerState<NearbyWorkersMap> createState() => _NearbyWorkersMapState();
 }
 
-class _NearbyWorkersMapState extends State<NearbyWorkersMap> {
+class _NearbyWorkersMapState extends ConsumerState<NearbyWorkersMap> {
   String _selectedCategoryFilter = 'all';
   WorkerEntry? _selectedWorker;
   final RozgarMapController _mapController = RozgarMapController();
@@ -37,8 +36,9 @@ class _NearbyWorkersMapState extends State<NearbyWorkersMap> {
     super.dispose();
   }
 
-  List<WorkerEntry> _getFilteredWorkers(AppState state) {
-    return state.allWorkers.where((w) {
+  List<WorkerEntry> _getFilteredWorkers() {
+    final workers = ref.watch(workerProvider).allWorkers;
+    return workers.where((w) {
       if (!w.details.isOnlineForMap) return false;
       if (_selectedCategoryFilter == 'all') return true;
       return w.details.categoryIds.any(
@@ -52,182 +52,164 @@ class _NearbyWorkersMapState extends State<NearbyWorkersMap> {
     try {
       bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) {
-        await Geolocator.openLocationSettings();
-        if (!mounted) return;
-        setState(() => _isLocating = false);
+        if (mounted) setState(() => _isLocating = false);
         return;
       }
       LocationPermission permission = await Geolocator.checkPermission();
       if (permission == LocationPermission.denied) {
         permission = await Geolocator.requestPermission();
         if (permission == LocationPermission.denied) {
-          if (!mounted) return;
-          setState(() => _isLocating = false);
+          if (mounted) setState(() => _isLocating = false);
           return;
         }
       }
-      Position pos = await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.high,
-          timeLimit: Duration(seconds: 8),
-        ),
+      final pos = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
       );
-      await _mapController.animateTo(pos.latitude, pos.longitude, 16);
+      await reverseGeocode(pos.latitude, pos.longitude);
+      if (mounted) {
+        _mapController.animateTo(pos.latitude, pos.longitude, 14);
+        setState(() => _isLocating = false);
+      }
     } catch (e) {
-      debugPrint('GPS error: $e');
+      if (mounted) setState(() => _isLocating = false);
     }
-    if (!mounted) return;
-    setState(() => _isLocating = false);
-  }
-
-  List<MapMarker> _buildMarkers(AppState state) {
-    final empLocation = state.employerProfile?.homeLocation;
-    final empLat = empLocation?.lat ?? 31.5204;
-    final empLng = empLocation?.lng ?? 74.3587;
-    final filteredWorkers = _getFilteredWorkers(state);
-    final markers = <MapMarker>[];
-
-    // Employer marker
-    markers.add(MapMarker(
-      id: 'employer-location',
-      lat: empLat,
-      lng: empLng,
-      title: 'Your Location',
-      snippet: 'Gulberg III, Lahore',
-      isEmployer: true,
-    ));
-
-    // Worker markers
-    for (final worker in filteredWorkers) {
-      markers.add(MapMarker(
-        id: 'worker-${worker.profile.id}',
-        lat: worker.details.currentLocation.lat,
-        lng: worker.details.currentLocation.lng,
-        title: worker.profile.displayName,
-        snippet: '${worker.details.averageRating}',
-        onTap: () => setState(() => _selectedWorker = worker),
-        isEmployer: false,
-      ));
-    }
-
-    return markers;
   }
 
   @override
   Widget build(BuildContext context) {
-    final state = widget.appState;
-    final empLocation = state.employerProfile?.homeLocation;
-    final empLat = empLocation?.lat ?? 31.5204;
-    final empLng = empLocation?.lng ?? 74.3587;
-    final filteredWorkers = _getFilteredWorkers(state);
-    final markers = _buildMarkers(state);
+    final profileNotifier = ref.watch(profileProvider);
+    final empLocation = profileNotifier.employerProfile?.homeLocation;
+    final filteredWorkers = _getFilteredWorkers();
 
-    return Column(
+    final markers = filteredWorkers.map((w) {
+      final loc = w.details.currentLocation;
+      return MapMarker(
+        id: w.profile.id,
+        lat: loc.lat,
+        lng: loc.lng,
+        title: w.profile.displayName,
+        snippet: '${w.details.averageRating} ★ · ${w.details.totalJobsCompleted} jobs',
+        onTap: () => setState(() => _selectedWorker = w),
+      );
+    }).toList();
+
+    return Stack(
       children: [
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          color: AppColors.slate950,
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
+        // Map
+        Positioned.fill(
+          child: RozgarMap(
+            initialLat: empLocation?.lat ?? 31.5204,
+            initialLng: empLocation?.lng ?? 74.3587,
+            initialZoom: 13,
+            markers: markers,
+            controller: _mapController,
+            showZoomControls: true,
+          ),
+        ),
+
+        // Category filter chips
+        Positioned(
+          top: MediaQuery.of(context).padding.top + 8,
+          left: 12,
+          right: 12,
+          child: SizedBox(
+            height: 36,
+            child: ListView(
+              scrollDirection: Axis.horizontal,
               children: [
                 _FilterChip(
-                  label: 'All Active (${filteredWorkers.length})',
+                  label: 'All',
                   isActive: _selectedCategoryFilter == 'all',
                   onTap: () => setState(() => _selectedCategoryFilter = 'all'),
                 ),
                 const SizedBox(width: 6),
-                ...seededCategories.map((cat) => _FilterChip(
-                      label: cat.nameEn,
-                      isActive: _selectedCategoryFilter == cat.id,
-                      onTap: () => setState(() => _selectedCategoryFilter = cat.id),
-                    )),
+                ...seededCategories.map((cat) => Padding(
+                  padding: const EdgeInsets.only(right: 6),
+                  child: _FilterChip(
+                    label: cat.nameEn,
+                    isActive: _selectedCategoryFilter == cat.id,
+                    onTap: () => setState(() => _selectedCategoryFilter = cat.id),
+                  ),
+                )),
               ],
             ),
           ),
         ),
-        Expanded(
-          child: Stack(
-            children: [
-              RozgarMap(
-                initialLat: empLat,
-                initialLng: empLng,
-                initialZoom: 14,
-                markers: markers,
-                showZoomControls: false,
-                controller: _mapController,
+
+        // GPS recenter button
+        Positioned(
+          right: 12,
+          bottom: _selectedWorker != null ? 200 : 24,
+          child: GestureDetector(
+            onTap: _isLocating ? null : _recenterGps,
+            child: Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.1), blurRadius: 8, offset: const Offset(0, 2))],
               ),
-              // Online count overlay
-              Positioned(
-                top: 12,
-                left: 0,
-                right: 0,
-                child: Center(
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                    decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(20)),
-                    child: Text(
-                      '${filteredWorkers.length} workers nearby',
-                      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Colors.white70),
-                    ),
-                  ),
-                ),
-              ),
-              // GPS Recenter button
-              Positioned(
-                right: 12,
-                bottom: 12,
-                child: GestureDetector(
-                  onTap: _recenterGps,
-                  child: Container(
-                    width: 40,
-                    height: 40,
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: AppColors.slate200),
-                      boxShadow: [
-                        BoxShadow(color: Colors.black.withValues(alpha: 0.1), blurRadius: 6),
-                      ],
-                    ),
-                    child: Center(
-                      child: _isLocating
-                          ? const SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.teal600),
-                            )
-                          : const Icon(Icons.my_location, size: 20, color: AppColors.teal600),
-                    ),
-                  ),
-                ),
-              ),
-            ],
+              child: _isLocating
+                  ? const Center(child: SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)))
+                  : const Icon(Icons.my_location, size: 20, color: AppColors.teal600),
+            ),
           ),
         ),
+
+        // Worker count badge
+        Positioned(
+          left: 12,
+          bottom: _selectedWorker != null ? 200 : 24,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.1), blurRadius: 8, offset: const Offset(0, 2))],
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.people, size: 14, color: AppColors.teal600),
+                const SizedBox(width: 6),
+                Text(
+                  '${filteredWorkers.length} workers nearby',
+                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.slate700),
+                ),
+              ],
+            ),
+          ),
+        ),
+
+        // Selected worker bottom sheet
         if (_selectedWorker != null)
-          _WorkerCard(
-            worker: _selectedWorker!,
-            appState: state,
-            onClose: () => setState(() => _selectedWorker = null),
-            onChat: () {
-              widget.onOpenChat(_selectedWorker!.profile.id);
-              setState(() => _selectedWorker = null);
-            },
-            onViewProfile: widget.onOpenProfile != null
-                ? () {
-                    widget.onOpenProfile!(_selectedWorker!.profile.id);
-                    setState(() => _selectedWorker = null);
-                  }
-                : null,
-            onInvite: () {
-              final openJob = state.jobs.where((j) => j.status == JobStatus.open).firstOrNull;
-              if (openJob != null) {
-                state.hireWorker(openJob.id, _selectedWorker!.profile.id);
-              }
-              widget.onOpenChat(_selectedWorker!.profile.id);
-              setState(() => _selectedWorker = null);
-            },
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: _WorkerBottomSheet(
+              worker: _selectedWorker!,
+              onClose: () => setState(() => _selectedWorker = null),
+              onChat: () => widget.onOpenChat(_selectedWorker!.profile.id),
+              onProfile: widget.onOpenProfile != null
+                  ? () => widget.onOpenProfile!(_selectedWorker!.profile.id)
+                  : null,
+              onInvite: () {
+                final jobs = ref.read(jobProvider).jobs;
+                final openJob = jobs.where((j) => j.status == JobStatus.open).firstOrNull;
+                if (openJob != null) {
+                  final employerId = ref.read(profileProvider).employerProfile?.id ?? '';
+                  ref.read(coordinatorProvider.notifier).hireWorker(
+                    jobId: openJob.id,
+                    workerProfileId: _selectedWorker!.profile.id,
+                    employerProfileId: employerId,
+                  );
+                }
+                setState(() => _selectedWorker = null);
+              },
+            ),
           ),
       ],
     );
@@ -238,135 +220,152 @@ class _FilterChip extends StatelessWidget {
   final String label;
   final bool isActive;
   final VoidCallback onTap;
-  const _FilterChip({required this.label, required this.isActive, required this.onTap});
+
+  const _FilterChip({
+    required this.label,
+    required this.isActive,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        margin: const EdgeInsets.only(right: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
         decoration: BoxDecoration(
-          color: isActive ? AppColors.emerald400 : AppColors.slate900.withValues(alpha: 0.9),
+          color: isActive ? AppColors.teal600 : Colors.white,
           borderRadius: BorderRadius.circular(20),
-          border: isActive ? null : Border.all(color: AppColors.slate700.withValues(alpha: 0.8)),
+          border: Border.all(color: isActive ? AppColors.teal600 : AppColors.slate200),
+          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 4, offset: const Offset(0, 1))],
         ),
-        child: Text(label,
-            style: TextStyle(
-                fontSize: 10,
-                fontWeight: isActive ? FontWeight.w800 : FontWeight.w600,
-                color: isActive ? AppColors.teal950 : AppColors.slate300)),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+            color: isActive ? Colors.white : AppColors.slate600,
+          ),
+        ),
       ),
     );
   }
 }
 
-class _WorkerCard extends StatelessWidget {
+class _WorkerBottomSheet extends StatelessWidget {
   final WorkerEntry worker;
-  final AppState appState;
   final VoidCallback onClose;
   final VoidCallback onChat;
-  final VoidCallback? onViewProfile;
+  final VoidCallback? onProfile;
   final VoidCallback onInvite;
 
-  const _WorkerCard({
+  const _WorkerBottomSheet({
     required this.worker,
-    required this.appState,
     required this.onClose,
     required this.onChat,
-    this.onViewProfile,
+    this.onProfile,
     required this.onInvite,
   });
 
   @override
   Widget build(BuildContext context) {
-    final empLocation = appState.employerProfile?.homeLocation ??
-        const LocationPoint(lat: 31.5204, lng: 74.3587, address: '');
-    final distanceKm = calculateDistanceKm(
-      lat1: empLocation.lat,
-      lng1: empLocation.lng,
-      lat2: worker.details.currentLocation.lat,
-      lng2: worker.details.currentLocation.lng,
-    );
-
     return Container(
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppColors.slate900.withValues(alpha: 0.95),
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-        border: Border(top: BorderSide(color: AppColors.slate700.withValues(alpha: 0.8))),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        boxShadow: [BoxShadow(color: Colors.black26, blurRadius: 12, offset: Offset(0, -4))],
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Handle bar
+          Center(
+            child: Container(
+              width: 36,
+              height: 4,
+              decoration: BoxDecoration(
+                color: AppColors.slate300,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
+          const SizedBox(height: 14),
+          // Worker info
           Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              ClipRRect(
-                borderRadius: BorderRadius.circular(22),
-                child: Image.network(
-                  worker.profile.profilePhotoUrl,
-                  width: 44,
-                  height: 44,
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, _, _) =>
-                      const CircleAvatar(radius: 22, child: Icon(Icons.person)),
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: AppColors.teal50,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: AppColors.teal200),
+                ),
+                child: Center(
+                  child: Text(
+                    worker.profile.displayName.isNotEmpty
+                        ? worker.profile.displayName[0].toUpperCase()
+                        : '?',
+                    style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: AppColors.teal700),
+                  ),
                 ),
               ),
-              const SizedBox(width: 10),
+              const SizedBox(width: 12),
               Expanded(
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Row(children: [
-                    Text(worker.profile.displayName,
-                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.slate100)),
-                    if (worker.profile.isVerified) ...[
-                      const SizedBox(width: 4),
-                      const Icon(Icons.check_circle, size: 14, color: AppColors.emerald400),
-                    ],
-                  ]),
-                  const SizedBox(height: 2),
-                  Row(children: [
-                    const Icon(Icons.star, size: 12, color: AppColors.amber400),
-                    const SizedBox(width: 2),
-                    Text('${worker.details.averageRating}',
-                        style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.amber400)),
-                    const SizedBox(width: 6),
-                    Text('${worker.details.totalJobsCompleted} jobs',
-                        style: const TextStyle(fontSize: 10, color: AppColors.slate400)),
-                    const SizedBox(width: 6),
-                    Text(formatDistance(distanceKm),
-                        style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: AppColors.emerald400)),
-                  ]),
-                ]),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Text(
+                          worker.profile.displayName,
+                          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: AppColors.slate800),
+                        ),
+                        if (worker.profile.isVerified) ...[
+                          const SizedBox(width: 4),
+                          const Icon(Icons.verified, size: 14, color: AppColors.teal600),
+                        ],
+                      ],
+                    ),
+                    const SizedBox(height: 2),
+                    Row(
+                      children: [
+                        const Icon(Icons.star, size: 12, color: AppColors.amber500),
+                        const SizedBox(width: 3),
+                        Text(
+                          '${worker.details.averageRating}',
+                          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.slate700),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          '${worker.details.totalJobsCompleted} jobs',
+                          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500, color: AppColors.slate500),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          formatDistance(calculateDistanceKm(
+                            lat1: worker.details.currentLocation.lat,
+                            lng1: worker.details.currentLocation.lng,
+                            lat2: 31.5204,
+                            lng2: 74.3587,
+                          )),
+                          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500, color: AppColors.slate500),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
-              GestureDetector(onTap: onClose, child: const Icon(Icons.close, size: 18, color: AppColors.slate400)),
+              GestureDetector(
+                onTap: onClose,
+                child: const Icon(Icons.close, size: 20, color: AppColors.slate400),
+              ),
             ],
           ),
-          const SizedBox(height: 10),
-          Container(
-            width: double.maxFinite,
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: AppColors.slate950.withValues(alpha: 0.6),
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: AppColors.slate800),
-            ),
-            child: Text('"${worker.details.bio}"',
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontSize: 11, fontStyle: FontStyle.italic, color: AppColors.slate300)),
-          ),
-          const SizedBox(height: 8),
-          Row(children: [
-            Text('Rate: ${worker.details.rateNote}',
-                style: const TextStyle(fontSize: 10, color: AppColors.slate400)),
-            const Spacer(),
-            Text('Response: ${worker.details.responseTimeAvgMinutes} mins',
-                style: const TextStyle(fontSize: 10, color: AppColors.emerald400)),
-          ]),
-          const SizedBox(height: 12),
+          const SizedBox(height: 14),
+          // Action buttons
           Row(children: [
             Expanded(
               child: GestureDetector(
@@ -374,24 +373,22 @@ class _WorkerCard extends StatelessWidget {
                 child: Container(
                   padding: const EdgeInsets.symmetric(vertical: 10),
                   decoration: BoxDecoration(
+                    color: AppColors.teal600,
                     borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: AppColors.emerald400.withValues(alpha: 0.4)),
-                    color: AppColors.slate800,
                   ),
                   child: const Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                    Icon(Icons.chat_outlined, size: 14, color: AppColors.emerald400),
+                    Icon(Icons.chat_bubble_outline, size: 14, color: Colors.white),
                     SizedBox(width: 4),
-                    Text('Chat',
-                        style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: AppColors.emerald400)),
+                    Text('Chat', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Colors.white)),
                   ]),
                 ),
               ),
             ),
-            if (onViewProfile != null) ...[
+            if (onProfile != null) ...[
               const SizedBox(width: 6),
               Expanded(
                 child: GestureDetector(
-                  onTap: onViewProfile,
+                  onTap: onProfile,
                   child: Container(
                     padding: const EdgeInsets.symmetric(vertical: 10),
                     decoration: BoxDecoration(

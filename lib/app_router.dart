@@ -103,7 +103,6 @@ GoRouter _buildRouter(AppState appState) {
           GoRoute(
             path: '/map',
             builder: (context, state) => NearbyWorkersMap(
-              appState: appState,
               onOpenChat: (workerId) => context.go('/chat', extra: workerId),
               onOpenProfile: (workerId) => context.go('/u/$workerId'),
             ),
