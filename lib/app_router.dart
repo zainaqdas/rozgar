@@ -69,7 +69,6 @@ GoRouter _buildRouter(AppState appState) {
       ),
       ShellRoute(
         builder: (context, state, child) => AppShell(
-          appState: appState,
           location: state.matchedLocation,
           child: child,
         ),
@@ -229,14 +228,12 @@ String? _defaultHome(AppState state) {
   return '/worker/home';
 }
 
-class AppShell extends StatelessWidget {
-  final AppState appState;
+class AppShell extends ConsumerWidget {
   final String location;
   final Widget child;
 
   const AppShell({
     super.key,
-    required this.appState,
     required this.location,
     required this.child,
   });
@@ -254,14 +251,15 @@ class AppShell extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final isNotifications = location == '/notifications';
-    final bottomNavTabs = appState.activeProfileType == ProfileType.employer
+    final profile = ref.watch(profileProvider);
+    final bottomNavTabs = profile.activeProfileType == ProfileType.employer
         ? _employerTabs
         : _workerTabs;
 
     // Surface operation errors to the user
-    final error = appState.lastOperationError;
+    final error = profile.lastOperationError;
     if (error != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -276,7 +274,7 @@ class AppShell extends StatelessWidget {
             ),
           ),
         );
-        appState.clearOperationError();
+        ref.read(profileProvider.notifier).clearOperationError();
       });
     }
 
@@ -291,11 +289,10 @@ class AppShell extends StatelessWidget {
         ],
       ),
       bottomNavigationBar: RozgarBottomNav(
-        appState: appState,
         activeTab: _activeTab ?? AppView.home,
         tabs: bottomNavTabs,
         onTabChange: (view) {
-          final path = _viewToPath(view, appState.activeProfileType);
+          final path = _viewToPath(view, ref.read(profileProvider).activeProfileType);
           if (path != null) context.go(path);
         },
       ),

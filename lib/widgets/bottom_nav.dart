@@ -1,32 +1,33 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../app.dart';
-import '../providers/app_state.dart';
+import '../providers/providers.dart';
 import '../theme/app_theme.dart';
 import '../utils/translations.dart';
 import '../models/profile.dart';
 
-class RozgarBottomNav extends StatelessWidget {
-  final AppState appState;
+class RozgarBottomNav extends ConsumerWidget {
   final AppView activeTab;
   final List<AppView> tabs;
   final ValueChanged<AppView> onTabChange;
 
   const RozgarBottomNav({
     super.key,
-    required this.appState,
     required this.activeTab,
     required this.tabs,
     required this.onTabChange,
   });
 
   @override
-  Widget build(BuildContext context) {
-    final lang = appState.language;
-    final totalUnread = appState.conversations.fold<int>(
+  Widget build(BuildContext context, WidgetRef ref) {
+    final lang = ref.watch(settingsProvider).language;
+    final chat = ref.watch(chatProvider);
+    final profile = ref.watch(profileProvider);
+    final totalUnread = chat.conversations.fold<int>(
       0,
       (acc, c) =>
           acc +
-          (appState.activeProfileType == ProfileType.employer
+          (profile.activeProfileType == ProfileType.employer
               ? c.unreadCountEmployer
               : c.unreadCountWorker),
     );
@@ -57,103 +58,104 @@ class RozgarBottomNav extends StatelessWidget {
       final isPostJob = tab == AppView.postJob;
 
       if (isPostJob) {
-        // Special Post Job CTA button
-        return GestureDetector(
-          onTap: () => onTabChange(tab),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Transform.translate(
-                offset: const Offset(0, -8),
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: AppColors.teal600,
-                    shape: BoxShape.circle,
-                    boxShadow: [
-                      BoxShadow(
-                        color: AppColors.teal600.withValues(alpha: 0.3),
-                        blurRadius: 12,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
-                    border: Border.all(color: Colors.white, width: 4),
+        return Expanded(
+          child: GestureDetector(
+            onTap: () => onTabChange(tab),
+            child: Container(
+              margin: const EdgeInsets.symmetric(horizontal: 4),
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              decoration: BoxDecoration(
+                color: AppColors.teal600,
+                borderRadius: BorderRadius.circular(12),
+                boxShadow: [
+                  BoxShadow(
+                    color: AppColors.teal600.withValues(alpha: 0.3),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
                   ),
-                  child: const Padding(
-                    padding: EdgeInsets.all(10),
-                    child: Icon(Icons.add_circle_outline,
-                        size: 24, color: Colors.white),
+                ],
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.add_circle_outline,
+                      size: 16, color: Colors.white),
+                  const SizedBox(width: 4),
+                  Text(
+                    AppTranslations.t('postJob', lang),
+                    style: const TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.white,
+                    ),
                   ),
-                ),
+                ],
               ),
-              const Text(
-                'Post Job',
-                style: TextStyle(
-                  fontSize: 9,
-                  fontWeight: FontWeight.w800,
-                  color: AppColors.teal700,
-                ),
-              ),
-            ],
+            ),
           ),
         );
       }
 
       final item = _navItem(tab, lang);
-      return Tooltip(
-        message: item.label,
+      return Expanded(
         child: GestureDetector(
-        onTap: () => onTabChange(tab),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(10),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  Icon(
-                    item.icon,
-                    size: 20,
-                    color: isActive
-                        ? item.activeColor
-                        : AppColors.slate500,
-                  ),
-                  if (tab == AppView.chat && totalUnread > 0)
-                    Positioned(
-                      top: -2,
-                      right: -4,
-                      child: Container(
-                        width: 8,
-                        height: 8,
-                        decoration: BoxDecoration(
-                          color: isActive
-                              ? AppColors.teal600
-                              : AppColors.slate400,
-                          shape: BoxShape.circle,
+          onTap: () => onTabChange(tab),
+          child: Container(
+            margin: const EdgeInsets.symmetric(horizontal: 2),
+            padding: const EdgeInsets.symmetric(vertical: 6),
+            decoration: BoxDecoration(
+              color: isActive ? AppColors.teal50 : Colors.transparent,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    Icon(
+                      item.icon,
+                      size: 20,
+                      color: isActive ? item.activeColor : AppColors.slate400,
+                    ),
+                    if (tab == AppView.chat && totalUnread > 0)
+                      Positioned(
+                        top: -4,
+                        right: -6,
+                        child: Container(
+                          width: 14,
+                          height: 14,
+                          decoration: const BoxDecoration(
+                            color: AppColors.rose500,
+                            shape: BoxShape.circle,
+                          ),
+                          child: Center(
+                            child: Text(
+                              totalUnread > 9 ? '9+' : '$totalUnread',
+                              style: const TextStyle(
+                                fontSize: 7,
+                                fontWeight: FontWeight.w800,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ),
                         ),
                       ),
-                    ),
-                ],
-              ),
-              const SizedBox(height: 2),
-              Text(
-                item.label,
-                style: TextStyle(
-                  fontSize: 9,
-                  fontWeight:
-                      isActive ? FontWeight.w700 : FontWeight.w500,
-                  color: isActive
-                      ? item.activeColor
-                      : AppColors.slate500,
+                  ],
                 ),
-              ),
-            ],
+                const SizedBox(height: 2),
+                Text(
+                  item.label,
+                  style: TextStyle(
+                    fontSize: 9,
+                    fontWeight:
+                        isActive ? FontWeight.w700 : FontWeight.w500,
+                    color: isActive ? item.activeColor : AppColors.slate500,
+                  ),
+                ),
+              ],
+            ),
           ),
-        ),
         ),
       );
     }).toList();
