@@ -1,27 +1,28 @@
 import 'package:flutter/material.dart';
-import '../../providers/app_state.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../providers/providers.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/translations.dart';
 import '../../utils/formatters.dart';
 import '../../widgets/animations.dart';
 import '../../widgets/error_states.dart';
 
-class NotificationsView extends StatelessWidget {
-  final AppState appState;
+class NotificationsView extends ConsumerWidget {
   final VoidCallback onBack;
   final ValueChanged<String> onOpenJobDetailsById;
 
   const NotificationsView({
     super.key,
-    required this.appState,
     required this.onBack,
     required this.onOpenJobDetailsById,
   });
 
   @override
-  Widget build(BuildContext context) {
-    final lang = appState.language;
-    final notifications = appState.notifications;
+  Widget build(BuildContext context, WidgetRef ref) {
+    final settings = ref.watch(settingsProvider);
+    final notificationNotifier = ref.watch(notificationProvider);
+    final lang = settings.language;
+    final notifications = notificationNotifier.notifications;
 
     return Scaffold(
       backgroundColor: AppColors.slate50,
@@ -50,60 +51,60 @@ class NotificationsView extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(AppTranslations.t('notifications', lang),
-                            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.slate800)),
-                        const Text('Live FCM job alerts & match updates',
-                            style: TextStyle(fontSize: 10, fontWeight: FontWeight.w500, color: AppColors.slate500)),
-                      ],
+                  Text(
+                    AppTranslations.t('notifications', lang),
+                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.slate800),
+                  ),
+                  const Spacer(),
+                  if (notifications.any((n) => !n.isRead))
+                    GestureDetector(
+                      onTap: () {
+                        final profileId = ref.read(profileProvider).activeProfileId;
+                        ref.read(notificationProvider.notifier).markNotificationsRead(profileId);
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                        decoration: BoxDecoration(
+                          color: AppColors.teal50,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: AppColors.teal200),
+                        ),
+                        child: const Text(
+                          'Mark all read',
+                          style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: AppColors.teal700),
+                        ),
+                      ),
                     ),
-                  ),
-                  ScalePress(
-                    onTap: appState.markNotificationsRead,
-                    child: Text(AppTranslations.t('markAllRead', lang),
-                        style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.teal700)),
-                  ),
                 ],
               ),
             ),
 
-            // List
+            // Notifications List
             Expanded(
               child: notifications.isEmpty
-                  ? const FadeInSlide(
-                      index: 0,
-                      child: EmptyState(
-                        icon: Icons.notifications_none,
-                        title: 'All Caught Up!',
-                        message: 'No new notifications right now. Check back when new jobs or updates arrive.',
-                        iconColor: AppColors.teal600,
-                      ),
-                    )
+                  ? EmptyState(
+                  icon: Icons.notifications_none,
+                  title: AppTranslations.t('nothingHereYet', lang),
+                  message: AppTranslations.t('checkBackLater', lang),
+                  )
                   : ListView.builder(
-                      physics: const BouncingScrollPhysics(),
-                      padding: const EdgeInsets.all(16),
+                      padding: const EdgeInsets.all(12),
                       itemCount: notifications.length,
-                      itemBuilder: (_, i) {
-                        final n = notifications[i];
+                      itemBuilder: (context, index) {
+                        final n = notifications[index];
                         return FadeInSlide(
-                          index: i,
-                          delayPerItem: const Duration(milliseconds: 60),
+                          index: index,
                           child: GestureDetector(
                             onTap: () {
-                              if (n.payload?['jobId'] != null) {
-                                onOpenJobDetailsById(n.payload!['jobId'].toString());
-                              }
+                              final jobId = n.payload?['jobId'] as String?;
+                              if (jobId != null) onOpenJobDetailsById(jobId);
                             },
                             child: Container(
-                              width: double.maxFinite,
-                              margin: const EdgeInsets.only(bottom: 10),
-                              padding: const EdgeInsets.all(14),
+                              margin: const EdgeInsets.only(bottom: 8),
+                              padding: const EdgeInsets.all(12),
                               decoration: BoxDecoration(
-                                color: n.isRead ? Colors.white : AppColors.teal50.withValues(alpha: 0.8),
-                                borderRadius: BorderRadius.circular(16),
+                                color: n.isRead ? Colors.white : AppColors.teal50,
+                                borderRadius: BorderRadius.circular(12),
                                 border: Border.all(
                                   color: n.isRead ? AppColors.slate200 : AppColors.teal200,
                                 ),

@@ -161,10 +161,9 @@ GoRouter _buildRouter(AppState appState) {
         path: '/notifications',
         parentNavigatorKey: _rootNavigatorKey,
         builder: (context, state) => NotificationsView(
-          appState: appState,
-          onBack: () => context.pop(),
-          onOpenJobDetailsById: (jobId) => context.go('/job/$jobId'),
-        ),
+onBack: () => context.pop(),
+onOpenJobDetailsById: (jobId) => context.go('/job/$jobId'),
+),
       ),
       GoRoute(
         path: '/u/:workerId',
