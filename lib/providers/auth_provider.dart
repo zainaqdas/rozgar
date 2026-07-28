@@ -30,22 +30,46 @@ class AuthNotifier extends ChangeNotifier {
     }
   }
 
-  /// Legacy phone/email login (mock OTP flow).
-  void loginWithPhoneOrEmail(String contact) {
-    final isPhone = contact.contains('+') ||
-        contact.replaceAll(' ', '').contains(RegExp(r'^\d+$'));
-    _authIdentity = AuthIdentity(
-      id: 'auth-user-1',
-      phoneNumber: isPhone ? contact : null,
-      email: !isPhone ? contact : null,
-      preferredLanguage: PreferredLanguage.en,
-      createdAt: DateTime.now(),
-    );
-    notifyListeners();
+  /// Send an OTP to a phone number. Returns error string or null on success.
+  Future<String?> sendPhoneOtp(String phone) async {
+    try {
+      await _supabase.signInWithPhoneOtp(phone);
+      return null;
+    } catch (e) {
+      debugPrint('Phone OTP send error: $e');
+      _lastOperationError = 'Failed to send OTP';
+      notifyListeners();
+      return 'Failed to send OTP: ${e.toString()}';
+    }
   }
 
-  bool verifyOtp(String otp) {
-    return true;
+  /// Verify an SMS OTP. On success, sets auth identity and checks onboarding.
+  /// Returns error string or null on success.
+  Future<String?> verifyPhoneOtp(String phone, String otp) async {
+    try {
+      final response = await _supabase.verifyPhoneOtp(phone, otp);
+      if (response.session != null) {
+        final user = response.session!.user;
+        _authIdentity = AuthIdentity(
+          id: user.id,
+          phoneNumber: phone,
+          preferredLanguage: PreferredLanguage.en,
+          createdAt: user.createdAt is DateTime
+              ? user.createdAt as DateTime
+              : DateTime.tryParse(user.createdAt.toString()) ?? DateTime.now(),
+        );
+        final profiles = await _supabase.getProfilesByAuthId(user.id);
+        _needsOnboarding = profiles.isEmpty;
+        notifyListeners();
+        return null;
+      }
+      return 'Verification failed. Please try again.';
+    } catch (e) {
+      debugPrint('Phone OTP verify error: $e');
+      _lastOperationError = 'OTP verification failed';
+      notifyListeners();
+      return 'Invalid code. Please check and try again.';
+    }
   }
 
   /// Simple email sign-in (returns error string or null on success).

@@ -63,6 +63,20 @@ class SupabaseService {
     await _client.auth.signOut();
   }
 
+  /// Send an OTP to a phone number via SMS.
+  Future<void> signInWithPhoneOtp(String phone) async {
+    await _client.auth.signInWithOtp(phone: phone);
+  }
+
+  /// Verify an SMS OTP and return the auth session.
+  Future<AuthResponse> verifyPhoneOtp(String phone, String token) async {
+    return _client.auth.verifyOTP(
+      phone: phone,
+      token: token,
+      type: OtpType.sms,
+    );
+  }
+
   /// Listen to auth state changes.
   Stream<AuthState> get onAuthChange => _client.auth.onAuthStateChange;
 

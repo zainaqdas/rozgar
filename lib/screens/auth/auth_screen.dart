@@ -503,14 +503,20 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                 ? null
                 : () async {
                     if (_isPhone) {
-                      // Phone OTP flow
-                      try {
-                        ref.read(authProvider.notifier).loginWithPhoneOrEmail(
-                            _contactController.text);
-                        if (mounted) setState(() => _step = 1);
-                      } catch (e) {
-                        if (mounted) {
-                          setState(() => _authError = 'Failed to send OTP: $e');
+                      // Phone OTP flow — send SMS via Supabase
+                      setState(() {
+                        _isAuthLoading = true;
+                        _authError = null;
+                      });
+                      final error = await ref
+                          .read(authProvider.notifier)
+                          .sendPhoneOtp(_contactController.text.trim());
+                      if (mounted) {
+                        setState(() => _isAuthLoading = false);
+                        if (error == null) {
+                          setState(() => _step = 1);
+                        } else {
+                          setState(() => _authError = error);
                         }
                       }
                     } else {
@@ -980,11 +986,28 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
         SizedBox(
           width: double.maxFinite,
           child: ElevatedButton(
-            onPressed: () {
-              if (ref.read(authProvider.notifier).verifyOtp(_otpController.text)) {
-                setState(() => _step = 2);
-              }
-            },
+            onPressed: _isAuthLoading
+                ? null
+                : () async {
+                    setState(() {
+                      _isAuthLoading = true;
+                      _authError = null;
+                    });
+                    final error = await ref
+                        .read(authProvider.notifier)
+                        .verifyPhoneOtp(
+                          _contactController.text.trim(),
+                          _otpController.text.trim(),
+                        );
+                    if (mounted) {
+                      setState(() => _isAuthLoading = false);
+                      if (error == null) {
+                        setState(() => _step = 2);
+                      } else {
+                        setState(() => _authError = error);
+                      }
+                    }
+                  },
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
