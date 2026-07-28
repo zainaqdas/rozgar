@@ -166,6 +166,22 @@ class ProfileNotifier extends ChangeNotifier {
     ));
   }
 
+  void updateProfilePhoto(String photoUrl) {
+    final profile = activeProfile;
+    if (profile == null) return;
+    final updated = profile.copyWith(profilePhotoUrl: photoUrl);
+    if (profile.profileType == ProfileType.employer) {
+      _employerProfile = updated;
+    } else {
+      _workerProfile = updated;
+    }
+    notifyListeners();
+    _fireAndForget('updateProfilePhoto', () => _supabase.updateProfile(
+      profile.id,
+      {'profile_photo_url': photoUrl},
+    ));
+  }
+
   void updateWorkerRadius(double radiusKm) {
     if (_workerDetails == null) return;
     _workerDetails = _workerDetails!.copyWith(notificationRadiusKm: radiusKm);

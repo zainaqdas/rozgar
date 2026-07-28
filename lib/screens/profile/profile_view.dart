@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image_picker/image_picker.dart';
 import '../../providers/providers.dart';
 import '../../services/ai_service.dart';
+import '../../services/storage_service.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/translations.dart';
 import '../../data/categories.dart';
@@ -151,7 +153,7 @@ class _ProfileViewState extends ConsumerState<ProfileView> {
   }
 }
 
-class _ProfileHeaderCard extends StatelessWidget {
+class _ProfileHeaderCard extends ConsumerWidget {
   final Profile profile;
   final bool isWorker;
   final bool cnicVerified;
@@ -162,8 +164,31 @@ class _ProfileHeaderCard extends StatelessWidget {
     required this.cnicVerified,
   });
 
+  Future<void> _pickAndUploadPhoto(WidgetRef ref) async {
+    final picker = ImagePicker();
+    final picked = await picker.pickImage(
+      source: ImageSource.gallery,
+      maxWidth: 512,
+      maxHeight: 512,
+      imageQuality: 85,
+    );
+    if (picked == null) return;
+    final bytes = await picked.readAsBytes();
+    final ext = picked.name.split('.').lastOrNull ?? 'jpg';
+    try {
+      final url = await StorageService.instance.uploadAvatar(
+        profile.id,
+        bytes,
+        ext,
+      );
+      ref.read(profileProvider.notifier).updateProfilePhoto(url);
+    } catch (e) {
+      debugPrint('Avatar upload failed: $e');
+    }
+  }
+
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     return Container(
       width: double.maxFinite,
       padding: const EdgeInsets.all(20),
@@ -177,26 +202,68 @@ class _ProfileHeaderCard extends StatelessWidget {
       ),
       child: Column(
         children: [
-          Container(
-            width: 72,
-            height: 72,
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.2),
-              shape: BoxShape.circle,
-              border: Border.all(color: Colors.white.withValues(alpha: 0.4), width: 2),
-            ),
-            child: Center(
-              child: Text(
-                profile.displayName.isNotEmpty
-                    ? profile.displayName[0].toUpperCase()
-                    : '?',
-                style: const TextStyle(
-                  fontSize: 28,
-                  fontWeight: FontWeight.w900,
-                  color: Colors.white,
+          Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Container(
+                width: 72,
+                height: 72,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.white.withValues(alpha: 0.4), width: 2),
+                  image: profile.profilePhotoUrl.isNotEmpty
+                      ? DecorationImage(
+                          image: NetworkImage(profile.profilePhotoUrl),
+                          fit: BoxFit.cover,
+                        )
+                      : null,
+                  color: profile.profilePhotoUrl.isEmpty
+                      ? Colors.white.withValues(alpha: 0.2)
+                      : null,
+                ),
+                child: profile.profilePhotoUrl.isEmpty
+                    ? Center(
+                        child: Text(
+                          profile.displayName.isNotEmpty
+                              ? profile.displayName[0].toUpperCase()
+                              : '?',
+                          style: const TextStyle(
+                            fontSize: 28,
+                            fontWeight: FontWeight.w900,
+                            color: Colors.white,
+                          ),
+                        ),
+                      )
+                    : null,
+              ),
+              Positioned(
+                right: -4,
+                bottom: -4,
+                child: GestureDetector(
+                  onTap: () => _pickAndUploadPhoto(ref),
+                  child: Container(
+                    width: 26,
+                    height: 26,
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.15),
+                          blurRadius: 4,
+                          offset: const Offset(0, 1),
+                        ),
+                      ],
+                    ),
+                    child: Icon(
+                      Icons.camera_alt_rounded,
+                      size: 14,
+                      color: isWorker ? AppColors.amber700 : AppColors.teal700,
+                    ),
+                  ),
                 ),
               ),
-            ),
+            ],
           ),
           const SizedBox(height: 12),
           Row(
