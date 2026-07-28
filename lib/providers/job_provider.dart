@@ -28,9 +28,29 @@ class JobNotifier extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Jobs older than this many days are auto-expired on load.
+  static const int expiryDays = 14;
+
   void setJobs(List<Job> jobs) {
-    _jobs = jobs;
+    final now = DateTime.now();
+    final cutoff = now.subtract(const Duration(days: expiryDays));
+    final expiredIds = <String>[];
+
+    _jobs = jobs.map((job) {
+      if (job.status == JobStatus.open && job.createdAt.isBefore(cutoff)) {
+        expiredIds.add(job.id);
+        return job.copyWith(status: JobStatus.expired);
+      }
+      return job;
+    }).toList();
+
     notifyListeners();
+
+    // Persist expiry to Supabase fire-and-forget
+    for (final id in expiredIds) {
+      _fireAndForget('expireJob:$id',
+          () => _supabase.updateJobStatus(id, status: 'expired'));
+    }
   }
 
   void setApplications(List<Application> applications) {
