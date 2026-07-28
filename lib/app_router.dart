@@ -285,7 +285,6 @@ class AppShell extends StatelessWidget {
         children: [
           if (!isNotifications)
             RozgarHeader(
-              appState: appState,
               onOpenNotifications: () => context.go('/notifications'),
             ),
           Expanded(child: child),
