@@ -48,7 +48,7 @@ class NotificationNotifier extends ChangeNotifier {
   void _fireAndForget(String label, Future<dynamic> Function() task) {
     task().then((_) {}, onError: (e) {
       debugPrint('$label failed: $e');
-      _lastOperationError = '$label failed';
+      _lastOperationError ??= '$label failed';
       notifyListeners();
     });
   }

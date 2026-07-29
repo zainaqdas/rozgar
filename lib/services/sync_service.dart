@@ -212,6 +212,8 @@ class SyncService {
       case 'express_interest':
         await supabase.createApplication(
             Application.fromJson(op.payload));
+      default:
+        throw StateError('Unknown sync operation type: ${op.type}');
     }
   }
 

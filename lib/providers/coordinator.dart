@@ -1,6 +1,5 @@
 import 'package:flutter/foundation.dart';
 import '../models/profile.dart';
-import '../models/application.dart';
 import '../models/conversation.dart';
 import '../services/supabase_service.dart';
 import '../services/supabase_config.dart';
@@ -57,6 +56,9 @@ class Coordinator extends ChangeNotifier {
   /// Load all data from Supabase for the current session.
   /// Mirrors AppState.initialize() but distributes state to domain notifiers.
   Future<void> initialize() async {
+    // Load persisted language preference before anything else
+    await settings.loadFromPrefs();
+
     try {
       final session = SupabaseConfig.client.auth.currentSession;
       if (session == null) {
@@ -83,13 +85,9 @@ class Coordinator extends ChangeNotifier {
       final allJobs = await _supabase.getAllJobs();
       jobs.setJobs(allJobs);
 
-      // Load applications for all jobs
-      final allJobIds = allJobs.map((j) => j.id).toSet();
-      final allApplications = <Application>[];
-      for (final jobId in allJobIds) {
-        final jobApps = await _supabase.getApplicationsForJob(jobId);
-        allApplications.addAll(jobApps);
-      }
+      // Load applications for all jobs (single batch query)
+      final allJobIds = allJobs.map((j) => j.id).toList();
+      final allApplications = await _supabase.getApplicationsForJobs(allJobIds);
       jobs.setApplications(allApplications);
 
       // Load conversations and messages
@@ -162,12 +160,8 @@ class Coordinator extends ChangeNotifier {
       if (isEmployer) {
         final employerJobs = await _supabase.getEmployerJobs(activeProfileId);
         jobs.setJobs(employerJobs);
-        final allJobIds = employerJobs.map((j) => j.id).toSet();
-        final allApplications = <Application>[];
-        for (final jobId in allJobIds) {
-          final jobApps = await _supabase.getApplicationsForJob(jobId);
-          allApplications.addAll(jobApps);
-        }
+        final allJobIds = employerJobs.map((j) => j.id).toList();
+        final allApplications = await _supabase.getApplicationsForJobs(allJobIds);
         jobs.setApplications(allApplications);
       } else {
         final allJobs = await _supabase.getAllJobs();

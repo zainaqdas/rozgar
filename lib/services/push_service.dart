@@ -17,6 +17,11 @@ class PushService {
   final FlutterLocalNotificationsPlugin _localNotifications =
       FlutterLocalNotificationsPlugin();
   bool _initialized = false;
+  int _notificationIdCounter = 0;
+
+  /// Callback invoked when the user taps a local notification.
+  /// Wire this in main.dart to navigate via GoRouter.
+  static void Function(String? payload)? onNotificationTap;
 
   bool get isInitialized => _initialized;
 
@@ -90,7 +95,7 @@ class PushService {
     if (notification == null) return;
 
     _localNotifications.show(
-      notification.hashCode,
+      _notificationIdCounter++,
       notification.title,
       notification.body,
       NotificationDetails(
@@ -113,6 +118,7 @@ class PushService {
 
   void _onNotificationTap(NotificationResponse response) {
     debugPrint('Notification tapped: ${response.payload}');
+    onNotificationTap?.call(response.payload);
   }
 
   Future<void> unsubscribeFromTopic(String topic) async {

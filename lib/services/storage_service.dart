@@ -12,7 +12,16 @@ class StorageService {
   static const String cnicBucket = 'cnic-docs';
   static const String chatMediaBucket = 'chat-media';
 
+  // Size limits in bytes
+  static const int maxAvatarBytes = 5 * 1024 * 1024; // 5 MB
+  static const int maxCnicBytes = 10 * 1024 * 1024; // 10 MB
+  static const int maxChatMediaBytes = 10 * 1024 * 1024; // 10 MB
+
+  static const _avatarExtensions = {'jpg', 'jpeg', 'png', 'webp'};
+  static const _cnicExtensions = {'jpg', 'jpeg', 'png', 'pdf'};
+
   Future<String> uploadAvatar(String userId, Uint8List bytes, String ext) async {
+    _validateUpload(bytes, ext, maxAvatarBytes, _avatarExtensions, 'Avatar');
     final path = '$userId/avatar.$ext';
     await SupabaseConfig.client.storage
         .from(avatarsBucket)
@@ -34,6 +43,7 @@ class StorageService {
   }
 
   Future<String> uploadCnic(String userId, Uint8List bytes, String ext) async {
+    _validateUpload(bytes, ext, maxCnicBytes, _cnicExtensions, 'CNIC');
     final path = '$userId/cnic.$ext';
     await SupabaseConfig.client.storage
         .from(cnicBucket)
@@ -47,6 +57,9 @@ class StorageService {
   }
 
   Future<String> uploadChatMedia(String conversationId, String senderId, Uint8List bytes, String filename) async {
+    if (bytes.length > maxChatMediaBytes) {
+      throw ArgumentError('Chat media exceeds ${maxChatMediaBytes ~/ (1024 * 1024)}MB limit.');
+    }
     final path = '$conversationId/$senderId/$filename';
     await SupabaseConfig.client.storage
         .from(chatMediaBucket)
@@ -56,5 +69,26 @@ class StorageService {
 
   String getPublicUrl(String bucket, String path) {
     return SupabaseConfig.client.storage.from(bucket).getPublicUrl(path);
+  }
+
+  void _validateUpload(
+    Uint8List bytes,
+    String ext,
+    int maxBytes,
+    Set<String> allowedExtensions,
+    String label,
+  ) {
+    if (bytes.isEmpty) {
+      throw ArgumentError('$label file is empty.');
+    }
+    if (bytes.length > maxBytes) {
+      throw ArgumentError('$label exceeds ${maxBytes ~/ (1024 * 1024)}MB limit.');
+    }
+    final normalizedExt = ext.toLowerCase().replaceFirst('.', '');
+    if (!allowedExtensions.contains(normalizedExt)) {
+      throw ArgumentError(
+        '$label format .$normalizedExt not allowed. Accepted: ${allowedExtensions.map((e) => '.$e').join(', ')}',
+      );
+    }
   }
 }

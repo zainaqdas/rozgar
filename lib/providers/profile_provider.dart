@@ -4,6 +4,9 @@ import '../models/location_point.dart';
 import '../models/review.dart';
 import '../services/supabase_service.dart';
 import '../utils/sanitize.dart';
+import 'package:uuid/uuid.dart';
+
+const _uuid = Uuid();
 
 class ProfileNotifier extends ChangeNotifier {
   final SupabaseService _supabase = SupabaseService.instance;
@@ -195,7 +198,7 @@ class ProfileNotifier extends ChangeNotifier {
   void _fireAndForget(String label, Future<dynamic> Function() task) {
     task().then((_) {}, onError: (e) {
       debugPrint('$label failed: $e');
-      _lastOperationError = '$label failed';
+      _lastOperationError ??= '$label failed';
       notifyListeners();
     });
   }
@@ -214,7 +217,7 @@ class ProfileNotifier extends ChangeNotifier {
     final reviewerId = _activeProfileId;
     if (reviewerId == null) return;
     final review = Review(
-      id: 'rev-${DateTime.now().millisecondsSinceEpoch}',
+      id: 'rev-${_uuid.v4()}',
       jobId: jobId,
       reviewerProfileId: reviewerId,
       revieweeProfileId: revieweeProfileId,

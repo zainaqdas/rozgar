@@ -41,7 +41,7 @@ void main() async {
     MapService.instance.setUseGoogleMaps();
   }
 
-  PushService.instance.initialize();
+  await PushService.instance.initialize();
 
   runApp(const ProviderScope(child: RozgarApp()));
 }
@@ -60,6 +60,23 @@ class _RozgarAppState extends ConsumerState<RozgarApp> {
   void initState() {
     super.initState();
     _initialize();
+    PushService.onNotificationTap = _handleNotificationTap;
+  }
+
+  void _handleNotificationTap(String? payload) {
+    final router = ref.read(routerProvider);
+    switch (payload) {
+      case 'new_message':
+        router.go('/chat');
+      default:
+        router.go('/notifications');
+    }
+  }
+
+  @override
+  void dispose() {
+    PushService.onNotificationTap = null;
+    super.dispose();
   }
 
   Future<void> _initialize() async {

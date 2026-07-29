@@ -15,18 +15,6 @@ class MapMarker {
   final double lat;
   final double lng;
   final String title;
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is MapMarker &&
-          runtimeType == other.runtimeType &&
-          id == other.id &&
-          lat == other.lat &&
-          lng == other.lng;
-
-  @override
-  int get hashCode => Object.hash(id, lat, lng);
   final String? snippet;
   final VoidCallback? onTap;
   final bool isEmployer;
@@ -40,6 +28,21 @@ class MapMarker {
     this.onTap,
     this.isEmployer = false,
   });
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is MapMarker &&
+          runtimeType == other.runtimeType &&
+          id == other.id &&
+          lat == other.lat &&
+          lng == other.lng &&
+          title == other.title &&
+          snippet == other.snippet &&
+          isEmployer == other.isEmployer;
+
+  @override
+  int get hashCode => Object.hash(id, lat, lng, title, snippet, isEmployer);
 }
 
 /// Central service for selecting and configuring the map provider.

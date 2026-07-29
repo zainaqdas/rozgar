@@ -184,6 +184,7 @@ class ChatNotifier extends ChangeNotifier {
   }
 
   void handleRealtimeMessage(Message message) {
+    if (_messages.any((m) => m.id == message.id)) return;
     _messages = [..._messages, message];
     _conversations = _conversations.map((c) {
       if (c.id == message.conversationId) {
@@ -200,7 +201,7 @@ class ChatNotifier extends ChangeNotifier {
   void _fireAndForget(String label, Future<dynamic> Function() task) {
     task().then((_) {}, onError: (e) {
       debugPrint('$label failed: $e');
-      _lastOperationError = '$label failed';
+      _lastOperationError ??= '$label failed';
       notifyListeners();
     });
   }

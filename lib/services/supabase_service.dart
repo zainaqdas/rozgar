@@ -511,13 +511,13 @@ class SupabaseService {
   ) async {
     await _client
         .from('applications')
-        .update({'status': 'pending'})
+        .update({'status': 'interested'})
         .eq('job_id', jobId)
         .eq('worker_profile_id', hiredWorkerProfileId);
     if (rejectApplicationIds.isNotEmpty) {
       await _client
           .from('applications')
-          .update({'status': 'pending'})
+          .update({'status': 'interested'})
           .inFilter('id', rejectApplicationIds);
     }
   }
@@ -527,6 +527,17 @@ class SupabaseService {
     String hiredWorkerProfileId,
     List<String> rejectApplicationIds,
   ) => rollbackApplications(jobId, hiredWorkerProfileId, rejectApplicationIds);
+
+  /// Fetch applications for multiple jobs in a single query (avoids N+1).
+  Future<List<Application>> getApplicationsForJobs(List<String> jobIds) async {
+    if (jobIds.isEmpty) return [];
+    final response = await _client
+        .from('applications')
+        .select()
+        .inFilter('job_id', jobIds)
+        .order('applied_at', ascending: false);
+    return response.map((a) => Application.fromJson(a)).toList();
+  }
 
   // ===========================================================================
   // CONVERSATIONS

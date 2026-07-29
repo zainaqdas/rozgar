@@ -32,6 +32,8 @@ class AuthNotifier extends ChangeNotifier {
 
   /// Send an OTP to a phone number. Returns error string or null on success.
   Future<String?> sendPhoneOtp(String phone) async {
+    final validationError = _validatePhone(phone);
+    if (validationError != null) return validationError;
     try {
       await _supabase.signInWithPhoneOtp(phone);
       return null;
@@ -41,6 +43,25 @@ class AuthNotifier extends ChangeNotifier {
       notifyListeners();
       return 'Failed to send OTP: ${e.toString()}';
     }
+  }
+
+  /// Validate E.164 phone format. Pakistan numbers: +92XXXXXXXXXX (13 digits total).
+  static String? _validatePhone(String phone) {
+    final trimmed = phone.trim();
+    if (trimmed.isEmpty) {
+      return 'Phone number is required.';
+    }
+    if (!trimmed.startsWith('+')) {
+      return 'Phone number must start with + (e.g. +923001234567).';
+    }
+    final digits = trimmed.substring(1);
+    if (digits.length < 10 || digits.length > 15) {
+      return 'Invalid phone number length. Use format +92XXXXXXXXXX.';
+    }
+    if (!RegExp(r'^[0-9]+$').hasMatch(digits)) {
+      return 'Phone number must contain only digits after +.';
+    }
+    return null;
   }
 
   /// Verify an SMS OTP. On success, sets auth identity and checks onboarding.

@@ -64,9 +64,15 @@ void main() {
 
     test('markers with same id and coords are equal', () {
       final a = MapMarker(id: 'w1', lat: 31.5, lng: 74.3, title: 'A');
-      final b = MapMarker(id: 'w1', lat: 31.5, lng: 74.3, title: 'B');
+      final b = MapMarker(id: 'w1', lat: 31.5, lng: 74.3, title: 'A');
       expect(a == b, isTrue);
       expect(a.hashCode, b.hashCode);
+    });
+
+    test('markers with same id and coords but different title are not equal', () {
+      final a = MapMarker(id: 'w1', lat: 31.5, lng: 74.3, title: 'A');
+      final b = MapMarker(id: 'w1', lat: 31.5, lng: 74.3, title: 'B');
+      expect(a == b, isFalse);
     });
   });
 }
