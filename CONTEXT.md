@@ -256,6 +256,53 @@ with real Supabase OTP.
 - **Worker availability toggle**: `_PresenceBanner` in `worker_home.dart` already has interactive Go Online/Offline button calling `toggleWorkerOnline()` → persists `is_online_for_map` to Supabase
 - **Image upload in chat**: `chat_screen.dart` already wires `image_picker` + `file_picker` → `StorageService.uploadChatMedia()` (lines 601–631)
 
+---
+
+## Session 19 — Comprehensive Bug Fix Audit (2026-07-29)
+
+### Goal
+Full codebase audit → 13 confirmed bugs fixed in 5 priority-ordered batches.
+Each batch verified with `flutter analyze` + `flutter test` before proceeding.
+
+### Final State
+- **flutter analyze**: 0 issues
+- **flutter test**: 223 passed / 4 skipped (1 new test added)
+- Files modified: 13 lib files + 1 test file
+
+### Batch 1 — Data Integrity
+| Fix | File | Detail |
+|-----|------|--------|
+| Review ID collision | profile_provider.dart | `millisecondsSinceEpoch` → `_uuid.v4()` (was only remaining timestamp ID) |
+| Invalid rollback status | supabase_service.dart:514,520 | `'pending'` → `'interested'` (matches ApplicationStatus enum) |
+| Silent offline queue loss | sync_service.dart | Added `default:` case → throws StateError → dead-letters unknown op types |
+
+### Batch 2 — User-Facing Bugs
+| Fix | File | Detail |
+|-----|------|--------|
+| Duplicate chat messages | chat_provider.dart | Dedup guard in `handleRealtimeMessage`: skips if message ID already present |
+| Notification ID collision | push_service.dart | `notification.hashCode` → incrementing `_notificationIdCounter` |
+| Notification tap dead | push_service.dart + main.dart | Static `onNotificationTap` callback → GoRouter nav (`new_message` → /chat, default → /notifications) |
+
+### Batch 3 — Persistence & Validation
+| Fix | File | Detail |
+|-----|------|--------|
+| Language not persisted | settings_provider.dart + coordinator.dart | `shared_preferences` load/save; `loadFromPrefs()` called in Coordinator.initialize() |
+| No phone validation | auth_provider.dart | E.164 guard: must start with `+`, 10–15 digits, digits only |
+| No upload validation | storage_service.dart | Size limits (5MB avatar, 10MB CNIC/chat) + extension allowlists; early ArgumentError |
+
+### Batch 4 — Performance
+| Fix | File | Detail |
+|-----|------|--------|
+| N+1 query | supabase_service.dart + coordinator.dart | New `getApplicationsForJobs(List<String>)` with `.inFilter()`; replaced loops in both `initialize()` and `refreshFromSupabase()` |
+| PushService not awaited | main.dart:44 | Added `await` before `PushService.instance.initialize()` |
+
+### Batch 5 — Code Quality
+| Fix | File | Detail |
+|-----|------|--------|
+| MapMarker == incomplete | map_service.dart | `==`/`hashCode` now include title, snippet, isEmployer; fields moved above operators |
+| Fire-and-forget error overwrite | 4 providers | `_lastOperationError =` → `??=` so first error isn't overwritten before UI reads it |
+| Test updated | map_service_test.dart | Fixed test that encoded old buggy equality; added different-title inequality test |
+
 ### Longer-Term Goals
 | Goal | Detail | Priority |
 |------|--------|----------|
