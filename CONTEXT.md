@@ -357,6 +357,30 @@ toJson/fromJson keys are symmetric.
 
 ---
 
+## Session 21 — Android Release Build Fixes (2026-08-05)
+
+### Goal
+Get `flutter build apk --release` to complete. Three distinct failures were
+diagnosed and fixed in sequence.
+
+### Final State
+- **✓ Built build/app/outputs/flutter-apk/app-release.apk (61.4 MB)**, 2 dex files, APK structure verified
+- Files modified: 4 (android/ only), left uncommitted for review
+
+### Fixes
+| # | Problem | File | Fix |
+|---|---------|------|-----|
+| 1 | `flutter_local_notifications` needs java.time on minSdk | android/app/build.gradle.kts | `isCoreLibraryDesugaringEnabled = true` + `coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")` |
+| 2 | Gradle daemon OOM-killed mid-build: `-Xmx8G -XX:MaxMetaspaceSize=4G` on a 7.6 GiB machine with swap 2.0/2.2 GiB full — kernel killed the daemon | android/gradle.properties | Heap → `-Xmx2048m`, metaspace 512m, code cache 256m, `org.gradle.workers.max=2` |
+| 3 | `:file_picker:checkReleaseAarMetadata` failed — file_picker 8.3.7 pins compileSdk 34 but transitive flutter_plugin_android_lifecycle 2.0.35 requires ≥ 36 | android/build.gradle.kts | Root-level `subprojects { afterEvaluate { … } }` forces compileSdk 36 on every Android subproject via reflection (AGP-version-safe); pub-cache copies left untouched |
+
+### Notes
+- Toolchain: Flutter 3.44.6 stable, AGP 9.0.1, Kotlin 2.3.20, Gradle 9.1.0, JDK 21 (Adoptium, /home/zainu/jdk/jdk-21.0.12+8)
+- Remaining build warnings are benign: deprecated-API notes in geocoding_android, "source value 8 obsolete" from plugin javac
+- If a future plugin needs compileSdk > 36, bump the constant in android/build.gradle.kts (single place)
+
+---
+
 ## Session History
 
 ### Session 17 (prior)
