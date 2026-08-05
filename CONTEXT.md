@@ -387,6 +387,29 @@ diagnosed and fixed in sequence.
 
 ---
 
+## Session 22 — Android Toolchain Completion: NDK Install (2026-08-05)
+
+### Goal
+Get `flutter doctor` Android toolchain fully green (NDK was missing) and
+re-verify the release build end-to-end.
+
+### Final State
+- **flutter doctor**: No issues found — Android toolchain ✓ with NDK present
+- **flutter build apk --release**: ✓ Built app-release.apk (61.4 MB) in 44.6s (warm cache), 2 dex files
+- Repo untouched this session — no Dart/Gradle edits, git status clean
+
+### Changes (machine-level, outside repo)
+| # | Change | Detail |
+|---|--------|--------|
+| 1 | Installed NDK 28.2.13676358 (r28c) | Official zip extracted to `/home/zainu/Android/Sdk/ndk/28.2.13676358` — the exact version Flutter 3.44.6 pins (`ndkVersion` const in flutter_tools/lib/src/android/gradle_utils.dart) |
+| 2 | Removed duplicate extraction | Deleted `/home/zainu/Android/Sdk/ndk/android-ndk-r28c` (2.2 GB) — Flutter's android_sdk.dart parses NDK dir names as semantic versions, so only the version-named dir is visible; AGP likewise resolves `ndkVersion` by dir name |
+
+### Verification
+- Fresh APK: 61,369,187 bytes (identical size to published v1.0.0 asset), sha256 prefix `ee21c07c424055bf`
+- No regression risk: zero repo files changed; build exercises the full Dart compile
+
+---
+
 ## Session History
 
 ### Session 17 (prior)
