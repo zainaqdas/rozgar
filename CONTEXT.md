@@ -379,6 +379,12 @@ diagnosed and fixed in sequence.
 - Remaining build warnings are benign: deprecated-API notes in geocoding_android, "source value 8 obsolete" from plugin javac
 - If a future plugin needs compileSdk > 36, bump the constant in android/build.gradle.kts (single place)
 
+### Release v1.0.0 published
+- Committed (fddf8db) + pushed android fixes to origin/main
+- GitHub Release v1.0.0 created via API (id 365550367), asset `rozgar-v1.0.0-android.apk` (61,369,187 bytes) uploaded and verified downloadable (HTTP 200, Content-Length match)
+- Download: https://github.com/zainaqdas/rozgar/releases/download/v1.0.0/rozgar-v1.0.0-android.apk
+- GitHub Actions still billing-locked (all runs failing at plan stage) — APK uploaded directly, CI release workflow redundant for now
+
 ---
 
 ## Session History
