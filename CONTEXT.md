@@ -408,6 +408,11 @@ re-verify the release build end-to-end.
 - Fresh APK: 61,369,187 bytes (identical size to published v1.0.0 asset), sha256 prefix `ee21c07c424055bf`
 - No regression risk: zero repo files changed; build exercises the full Dart compile
 
+### Follow-up — push to CI + release verification (same day)
+- Pushed 74d4103 to origin/main — every push to main triggers `.github/workflows/ci.yml`: analyze + test, then build release APK and publish to the rolling `latest-apk` release ("Latest Release APK (vX.Y.Z)")
+- Release section verified live: v1.0.0 → rozgar-v1.0.0-android.apk, 61,369,187 bytes, state "uploaded", public download URL returns HTTP 200, sha256 identical to local build (ee21c07c…)
+- Actions run status not re-verified this session (API check declined); last known state = billing-locked (runs failed at plan stage). If still locked, the manually uploaded v1.0.0 asset serves downloads; if unlocked, the rolling release auto-updates on every push to main
+
 ---
 
 ## Session History
