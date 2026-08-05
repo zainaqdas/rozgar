@@ -314,6 +314,49 @@ Each batch verified with `flutter analyze` + `flutter test` before proceeding.
 
 ---
 
+## Session 20 — Offline Sync Completion + Push Delivery Fixes (2026-08-05)
+
+### Goal
+Close the offline-resilience gap: every fire-and-forget Supabase write becomes
+retryable through the SyncService queue, and FCM device-token registration is
+fixed for cold starts, returning sessions, and new signups.
+
+### Final State
+- **flutter analyze**: 0 issues
+- **flutter test**: 223 passed / 4 skipped
+- Files modified: 8 (4 providers + coordinator + 3 services), `dart format` clean
+- Changes left uncommitted for review
+
+### Batch A — Sync Queue Completion
+| Fix | File | Detail |
+|-----|------|--------|
+| Retry on failure | chat/job/notification/profile providers | `_fireAndForget(type, payload, task)` — failed ops enqueue to SyncService instead of being silently lost |
+| 8 new replay handlers | sync_service.dart | `update_job_status`, `hire_and_reject`, `create_notification`, `update_conversation_last_message`, `mark_notifications_read`, `update_worker_details`, `add_review`, `profile_photo` |
+| Granular ops | chat_provider.dart, job_provider.dart | Multi-step closures split into individually retryable ops (sendMessage → send_message + update_conversation_last_message + create_notification; createJob radius notifs each their own op) |
+| Pre-init enqueue crash | sync_service.dart | Ops enqueued before the Hive box is open buffer in `_pendingBeforeInit` and flush on `initialize()` (was a `_box!` null crash / lost op) |
+| retryDeadLetter null guard | sync_service.dart | No-ops cleanly when boxes aren't open yet |
+
+Round-trip safety verified before adding handlers: `NotificationItem.toJson`
+snake_cases enum names and `_parseType` covers every stored value; `Review`
+toJson/fromJson keys are symmetric.
+
+### Batch B — Push Delivery
+| Fix | File | Detail |
+|-----|------|--------|
+| Token keyed to wrong ID | supabase_service.dart | `saveDeviceToken` resolves all profiles for the auth user via `getProfilesByAuthId` and upserts per profile row (was keyed on the auth user id, which is not a profile id — pushes never matched) |
+| Cold-start no-op | push_service.dart + coordinator.dart | New `PushService.registerCurrentToken()` called from `Coordinator.initialize()` after the session is restored |
+| New-signup no-op | profile_provider.dart | `registerCurrentToken()` called after `completeWorkerOnboarding` / `completeEmployerOnboarding` create the profile rows |
+
+### Batch C — Chat + Coordinator Hygiene
+| Fix | File | Detail |
+|-----|------|--------|
+| Realtime echo dedup | chat_provider.dart | `subscribeToConversation` routes inserts through `handleRealtimeMessage` so the sender's own realtime echo is deduped by message ID |
+| subscribeToAll | chat_provider.dart + coordinator.dart | `subscribeToAllConversations(list)` → `subscribeToAll()` using internal `_conversations` (single source of truth) |
+| Refresh before init | coordinator.dart | `refreshFromSupabase()` now calls `initialize()` when Supabase isn't ready yet (was a silent no-op) |
+| Refresh re-subscribe | coordinator.dart | Pull-to-refresh re-subscribes realtime + notifications and clears stale messages |
+
+---
+
 ## Session History
 
 ### Session 17 (prior)

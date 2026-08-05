@@ -37,7 +37,9 @@ class PushService {
       await Firebase.initializeApp();
       _messaging = FirebaseMessaging.instance;
 
-      FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+      FirebaseMessaging.onBackgroundMessage(
+        _firebaseMessagingBackgroundHandler,
+      );
 
       await _messaging!.requestPermission(
         alert: true,
@@ -46,15 +48,19 @@ class PushService {
         provisional: false,
       );
 
-      const androidSettings =
-          AndroidInitializationSettings('@mipmap/ic_launcher');
+      const androidSettings = AndroidInitializationSettings(
+        '@mipmap/ic_launcher',
+      );
       const iosSettings = DarwinInitializationSettings(
         requestAlertPermission: false,
         requestBadgePermission: false,
         requestSoundPermission: false,
       );
       await _localNotifications.initialize(
-        const InitializationSettings(android: androidSettings, iOS: iosSettings),
+        const InitializationSettings(
+          android: androidSettings,
+          iOS: iosSettings,
+        ),
         onDidReceiveNotificationResponse: _onNotificationTap,
       );
 
@@ -73,6 +79,19 @@ class PushService {
       debugPrint('PushService initialized');
     } catch (e) {
       debugPrint('PushService init failed (Firebase not configured?): $e');
+    }
+  }
+
+  Future<void> registerCurrentToken() async {
+    if (_messaging == null) return;
+    try {
+      final token = await _messaging!.getToken();
+      if (token != null) {
+        await SupabaseService.instance.saveDeviceToken(token, _platform());
+        debugPrint('PushService: registered device token');
+      }
+    } catch (e) {
+      debugPrint('PushService: failed to register token: $e');
     }
   }
 

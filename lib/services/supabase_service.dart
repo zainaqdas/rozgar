@@ -39,18 +39,12 @@ class SupabaseService {
 
   /// Sign in with email and password.
   Future<AuthResponse> signInWithEmail(String email, String password) async {
-    return _client.auth.signInWithPassword(
-      email: email,
-      password: password,
-    );
+    return _client.auth.signInWithPassword(email: email, password: password);
   }
 
   /// Sign up with email and password.
   Future<AuthResponse> signUpWithEmail(String email, String password) async {
-    return _client.auth.signUp(
-      email: email,
-      password: password,
-    );
+    return _client.auth.signUp(email: email, password: password);
   }
 
   /// Send a password reset email.
@@ -164,7 +158,9 @@ class SupabaseService {
 
   /// Update worker details.
   Future<WorkerDetails> updateWorkerDetails(
-      String profileId, Map<String, dynamic> updates) async {
+    String profileId,
+    Map<String, dynamic> updates,
+  ) async {
     final response = await _client
         .from('worker_details')
         .update(updates)
@@ -186,9 +182,7 @@ class SupabaseService {
         .eq('profile_type', 'worker')
         .eq('account_status', 'active')
         .range(offset, offset + limit - 1);
-    final allDetails = await _client
-        .from('worker_details')
-        .select();
+    final allDetails = await _client.from('worker_details').select();
 
     final detailsMap = <String, WorkerDetails>{};
     for (final d in allDetails) {
@@ -215,14 +209,19 @@ class SupabaseService {
     List<String> categoryIds = const [],
   }) async {
     try {
-      final response = await _client.rpc('nearby_workers', params: {
-        'p_lat': employerLocation.lat,
-        'p_lng': employerLocation.lng,
-        'p_radius_km': radiusKm,
-        'p_category_ids': categoryIds,
-      });
+      final response = await _client.rpc(
+        'nearby_workers',
+        params: {
+          'p_lat': employerLocation.lat,
+          'p_lng': employerLocation.lng,
+          'p_radius_km': radiusKm,
+          'p_category_ids': categoryIds,
+        },
+      );
       return (response as List)
-          .map((w) => NearbyWorker.fromJson(Map<String, dynamic>.from(w as Map)))
+          .map(
+            (w) => NearbyWorker.fromJson(Map<String, dynamic>.from(w as Map)),
+          )
           .toList();
     } catch (e) {
       debugPrint('nearby_workers RPC failed, falling back to client-side: $e');
@@ -240,40 +239,43 @@ class SupabaseService {
     required List<String> categoryIds,
   }) async {
     final workers = await getAllWorkers(limit: 200);
-    return workers.where((w) {
-      final dist = calculateDistanceKm(
-        lat1: w.details.currentLocation.lat,
-        lng1: w.details.currentLocation.lng,
-        lat2: employerLocation.lat,
-        lng2: employerLocation.lng,
-      );
-      if (dist > radiusKm) return false;
-      if (categoryIds.isEmpty) return true;
-      return categoryIds.any(
-        (cat) => w.details.categoryIds.any(
-          (wc) => wc.contains(cat) || cat.contains(wc),
-        ),
-      );
-    }).map((w) {
-      final dist = calculateDistanceKm(
-        lat1: w.details.currentLocation.lat,
-        lng1: w.details.currentLocation.lng,
-        lat2: employerLocation.lat,
-        lng2: employerLocation.lng,
-      );
-      return NearbyWorker(
-        profileId: w.profile.id,
-        displayName: w.profile.displayName,
-        categoryIds: w.details.categoryIds,
-        bio: w.details.bio,
-        averageRating: w.details.averageRating,
-        totalJobsCompleted: w.details.totalJobsCompleted,
-        distanceKm: dist,
-        lat: w.details.currentLocation.lat,
-        lng: w.details.currentLocation.lng,
-        profilePhotoUrl: w.profile.profilePhotoUrl,
-      );
-    }).toList();
+    return workers
+        .where((w) {
+          final dist = calculateDistanceKm(
+            lat1: w.details.currentLocation.lat,
+            lng1: w.details.currentLocation.lng,
+            lat2: employerLocation.lat,
+            lng2: employerLocation.lng,
+          );
+          if (dist > radiusKm) return false;
+          if (categoryIds.isEmpty) return true;
+          return categoryIds.any(
+            (cat) => w.details.categoryIds.any(
+              (wc) => wc.contains(cat) || cat.contains(wc),
+            ),
+          );
+        })
+        .map((w) {
+          final dist = calculateDistanceKm(
+            lat1: w.details.currentLocation.lat,
+            lng1: w.details.currentLocation.lng,
+            lat2: employerLocation.lat,
+            lng2: employerLocation.lng,
+          );
+          return NearbyWorker(
+            profileId: w.profile.id,
+            displayName: w.profile.displayName,
+            categoryIds: w.details.categoryIds,
+            bio: w.details.bio,
+            averageRating: w.details.averageRating,
+            totalJobsCompleted: w.details.totalJobsCompleted,
+            distanceKm: dist,
+            lat: w.details.currentLocation.lat,
+            lng: w.details.currentLocation.lng,
+            profilePhotoUrl: w.profile.profilePhotoUrl,
+          );
+        })
+        .toList();
   }
 
   // ===========================================================================
@@ -284,13 +286,8 @@ class SupabaseService {
   Future<Job> createJob(Job job) async {
     final data = job.toJson();
     // Set PostGIS location geometry
-    data['location'] =
-        'POINT(${job.pinLocation.lng} ${job.pinLocation.lat})';
-    final response = await _client
-        .from('jobs')
-        .insert(data)
-        .select()
-        .single();
+    data['location'] = 'POINT(${job.pinLocation.lng} ${job.pinLocation.lat})';
+    final response = await _client.from('jobs').insert(data).select().single();
     return Job.fromJson(response);
   }
 
@@ -334,12 +331,15 @@ class SupabaseService {
     required List<String> categoryIds,
   }) async {
     try {
-      final response = await _client.rpc('nearby_jobs', params: {
-        'p_lat': workerLocation.lat,
-        'p_lng': workerLocation.lng,
-        'p_radius_km': radiusKm,
-        'p_category_ids': categoryIds,
-      });
+      final response = await _client.rpc(
+        'nearby_jobs',
+        params: {
+          'p_lat': workerLocation.lat,
+          'p_lng': workerLocation.lng,
+          'p_radius_km': radiusKm,
+          'p_category_ids': categoryIds,
+        },
+      );
       return (response as List).map((j) => Job.fromJson(j)).toList();
     } catch (e) {
       debugPrint('nearby_jobs RPC failed, falling back to client-side: $e');
@@ -412,28 +412,23 @@ class SupabaseService {
         .from('applications')
         .select()
         .eq('job_id', jobId);
-    return response
-        .map((a) => Application.fromJson(a))
-        .toList();
+    return response.map((a) => Application.fromJson(a)).toList();
   }
 
   /// Fetch all applications by a worker.
-  Future<List<Application>> getApplicationsForWorker(String workerProfileId) async {
+  Future<List<Application>> getApplicationsForWorker(
+    String workerProfileId,
+  ) async {
     final response = await _client
         .from('applications')
         .select()
         .eq('worker_profile_id', workerProfileId);
-    return response
-        .map((a) => Application.fromJson(a))
-        .toList();
+    return response.map((a) => Application.fromJson(a)).toList();
   }
 
   /// Update application status.
   Future<void> updateApplicationStatus(String id, String status) async {
-    await _client
-        .from('applications')
-        .update({'status': status})
-        .eq('id', id);
+    await _client.from('applications').update({'status': status}).eq('id', id);
   }
 
   /// Batch-update applications for a job (hire one, reject others).
@@ -444,7 +439,11 @@ class SupabaseService {
     required List<String> rejectApplicationIds,
   }) async {
     try {
-      await _callHireAndRejectRpc(jobId, hiredWorkerProfileId, rejectApplicationIds);
+      await _callHireAndRejectRpc(
+        jobId,
+        hiredWorkerProfileId,
+        rejectApplicationIds,
+      );
     } catch (rpcError) {
       debugPrint('hireAndReject RPC failed, falling back: $rpcError');
       try {
@@ -454,7 +453,11 @@ class SupabaseService {
         await _hireApplication(jobId, hiredWorkerProfileId);
       } catch (seqError) {
         debugPrint('hireAndReject sequential fallback failed: $seqError');
-        await _rollbackApplications(jobId, hiredWorkerProfileId, rejectApplicationIds);
+        await _rollbackApplications(
+          jobId,
+          hiredWorkerProfileId,
+          rejectApplicationIds,
+        );
         rethrow;
       }
     }
@@ -466,11 +469,14 @@ class SupabaseService {
     String hiredWorkerProfileId,
     List<String> rejectApplicationIds,
   ) {
-    return _client.rpc('hire_and_reject', params: {
-      'p_job_id': jobId,
-      'p_hired_worker_profile_id': hiredWorkerProfileId,
-      'p_reject_application_ids': rejectApplicationIds,
-    });
+    return _client.rpc(
+      'hire_and_reject',
+      params: {
+        'p_job_id': jobId,
+        'p_hired_worker_profile_id': hiredWorkerProfileId,
+        'p_reject_application_ids': rejectApplicationIds,
+      },
+    );
   }
 
   Future<void> _callHireAndRejectRpc(
@@ -478,7 +484,11 @@ class SupabaseService {
     String hiredWorkerProfileId,
     List<String> rejectApplicationIds,
   ) {
-    return callHireAndRejectRpc(jobId, hiredWorkerProfileId, rejectApplicationIds);
+    return callHireAndRejectRpc(
+      jobId,
+      hiredWorkerProfileId,
+      rejectApplicationIds,
+    );
   }
 
   @visibleForTesting
@@ -555,7 +565,11 @@ class SupabaseService {
     }
 
     try {
-      final response = await _insertConversation(jobId, employerProfileId, workerProfileId);
+      final response = await _insertConversation(
+        jobId,
+        employerProfileId,
+        workerProfileId,
+      );
       return Conversation.fromJson(response);
     } catch (e) {
       debugPrint('Conversation insert conflict (race): $e');
@@ -566,7 +580,10 @@ class SupabaseService {
   }
 
   @visibleForTesting
-  Future<Map<String, dynamic>?> findConversation(String jobId, String workerProfileId) {
+  Future<Map<String, dynamic>?> findConversation(
+    String jobId,
+    String workerProfileId,
+  ) {
     return _client
         .from('conversations')
         .select()
@@ -575,7 +592,10 @@ class SupabaseService {
         .maybeSingle();
   }
 
-  Future<Map<String, dynamic>?> _findConversation(String jobId, String workerProfileId) {
+  Future<Map<String, dynamic>?> _findConversation(
+    String jobId,
+    String workerProfileId,
+  ) {
     return findConversation(jobId, workerProfileId);
   }
 
@@ -613,9 +633,7 @@ class SupabaseService {
         .select()
         .or('employer_profile_id.eq.$profileId,worker_profile_id.eq.$profileId')
         .order('last_message_time', ascending: false);
-    return response
-        .map((c) => Conversation.fromJson(c))
-        .toList();
+    return response.map((c) => Conversation.fromJson(c)).toList();
   }
 
   /// Update a conversation's last message text and time.
@@ -624,10 +642,13 @@ class SupabaseService {
     required String lastMessageText,
     required DateTime lastMessageTime,
   }) async {
-    await _client.from('conversations').update({
-      'last_message_text': lastMessageText,
-      'last_message_time': lastMessageTime.toIso8601String(),
-    }).eq('id', conversationId);
+    await _client
+        .from('conversations')
+        .update({
+          'last_message_text': lastMessageText,
+          'last_message_time': lastMessageTime.toIso8601String(),
+        })
+        .eq('id', conversationId);
   }
 
   // ===========================================================================
@@ -653,9 +674,7 @@ class SupabaseService {
         .select()
         .eq('conversation_id', conversationId)
         .order('sent_at', ascending: true);
-    return response
-        .map((m) => Message.fromJson(m))
-        .toList();
+    return response.map((m) => Message.fromJson(m)).toList();
   }
 
   /// Subscribe to new messages in a conversation (for live chat).
@@ -675,8 +694,7 @@ class SupabaseService {
             value: conversationId,
           ),
           callback: (payload) {
-            final msg =
-                Message.fromJson(payload.newRecord);
+            final msg = Message.fromJson(payload.newRecord);
             onMessage(msg);
           },
         )
@@ -704,9 +722,7 @@ class SupabaseService {
         .select()
         .eq('reviewee_profile_id', profileId)
         .order('created_at', ascending: false);
-    return response
-        .map((r) => Review.fromJson(r))
-        .toList();
+    return response.map((r) => Review.fromJson(r)).toList();
   }
 
   // ===========================================================================
@@ -715,9 +731,7 @@ class SupabaseService {
 
   /// Create a notification.
   Future<void> createNotification(NotificationItem notification) async {
-    await _client
-        .from('notifications')
-        .insert(notification.toJson());
+    await _client.from('notifications').insert(notification.toJson());
   }
 
   /// Fetch all notifications for a profile.
@@ -727,9 +741,7 @@ class SupabaseService {
         .select()
         .eq('profile_id', profileId)
         .order('created_at', ascending: false);
-    return response
-        .map((n) => NotificationItem.fromJson(n))
-        .toList();
+    return response.map((n) => NotificationItem.fromJson(n)).toList();
   }
 
   /// Mark all unread notifications as read for a profile.
@@ -758,8 +770,7 @@ class SupabaseService {
             value: profileId,
           ),
           callback: (payload) {
-            final notif = NotificationItem.fromJson(
-                payload.newRecord);
+            final notif = NotificationItem.fromJson(payload.newRecord);
             onNotification(notif);
           },
         )
@@ -767,14 +778,17 @@ class SupabaseService {
   }
 
   Future<void> saveDeviceToken(String token, String platform) async {
-    final profileId = _client.auth.currentUser?.id;
-    if (profileId == null) return;
-    await _client.from('device_tokens').upsert({
-      'id': 'dt-$profileId-$platform',
-      'profile_id': profileId,
-      'token': token,
-      'platform': platform,
-    });
+    final userId = _client.auth.currentUser?.id;
+    if (userId == null) return;
+    final profiles = await getProfilesByAuthId(userId);
+    for (final profile in profiles) {
+      await _client.from('device_tokens').upsert({
+        'id': 'dt-${profile.id}-$platform',
+        'profile_id': profile.id,
+        'token': token,
+        'platform': platform,
+      });
+    }
   }
 
   // ===========================================================================

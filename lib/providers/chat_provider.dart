@@ -3,6 +3,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/conversation.dart';
 import '../models/notification_item.dart';
 import '../services/supabase_service.dart';
+import '../services/sync_service.dart';
 import '../utils/sanitize.dart';
 import 'package:uuid/uuid.dart';
 
@@ -66,41 +67,54 @@ class ChatNotifier extends ChangeNotifier {
     }).toList();
     notifyListeners();
 
-    _fireAndForget('sendMessage', () async {
-      await _supabase.sendMessage(msg);
-      await _supabase.updateConversationLastMessage(
+    _fireAndForget(
+      'send_message',
+      msg.toJson(),
+      () => _supabase.sendMessage(msg),
+    );
+    _fireAndForget(
+      'update_conversation_last_message',
+      {
+        'conversation_id': conversationId,
+        'last_message_text': safeContent,
+        'last_message_time': DateTime.now().toIso8601String(),
+      },
+      () => _supabase.updateConversationLastMessage(
         conversationId,
         lastMessageText: safeContent,
-        lastMessageTime: msg.sentAt,
-      );
+        lastMessageTime: DateTime.now(),
+      ),
+    );
+    // Notify the other conversation participant
+    final conv = _conversations.firstWhere(
+      (c) => c.id == conversationId,
+      orElse: () => throw Exception('Conversation not found'),
+    );
+    final recipientProfileId = conv.employerProfileId == senderProfileId
+        ? conv.workerProfileId
+        : conv.employerProfileId;
 
-      // Notify the other conversation participant
-      final conv = _conversations.firstWhere(
-        (c) => c.id == conversationId,
-        orElse: () => throw Exception('Conversation not found'),
-      );
-      final recipientProfileId = conv.employerProfileId == senderProfileId
-          ? conv.workerProfileId
-          : conv.employerProfileId;
-
-      final notif = NotificationItem(
-        id: 'notif-${_uuid.v4()}',
-        profileId: recipientProfileId,
-        type: NotificationType.newMessage,
-        titleEn: 'New Message',
-        titleUr: 'نیا پیغام',
-        bodyEn: safeContent.length > 50
-            ? '${safeContent.substring(0, 50)}...'
-            : safeContent,
-        bodyUr: safeContent.length > 50
-            ? '${safeContent.substring(0, 50)}...'
-            : safeContent,
-        isRead: false,
-        createdAt: DateTime.now(),
-        payload: {'conversationId': conversationId},
-      );
-      await _supabase.createNotification(notif);
-    });
+    final notif = NotificationItem(
+      id: 'notif-${_uuid.v4()}',
+      profileId: recipientProfileId,
+      type: NotificationType.newMessage,
+      titleEn: 'New Message',
+      titleUr: 'نیا پیغام',
+      bodyEn: safeContent.length > 50
+          ? '${safeContent.substring(0, 50)}...'
+          : safeContent,
+      bodyUr: safeContent.length > 50
+          ? '${safeContent.substring(0, 50)}...'
+          : safeContent,
+      isRead: false,
+      createdAt: DateTime.now(),
+      payload: {'conversationId': conversationId},
+    );
+    _fireAndForget(
+      'create_notification',
+      notif.toJson(),
+      () => _supabase.createNotification(notif),
+    );
   }
 
   Conversation getOrCreateConversation(
@@ -108,8 +122,9 @@ class ChatNotifier extends ChangeNotifier {
     String workerProfileId,
     String employerProfileId,
   ) {
-    final existing = _conversations.where((c) =>
-        c.jobId == jobId && c.workerProfileId == workerProfileId).firstOrNull;
+    final existing = _conversations
+        .where((c) => c.jobId == jobId && c.workerProfileId == workerProfileId)
+        .firstOrNull;
     if (existing != null) return existing;
 
     final conv = Conversation(
@@ -123,7 +138,11 @@ class ChatNotifier extends ChangeNotifier {
     _conversations.insert(0, conv);
     notifyListeners();
 
-    getOrCreateConversationInSupabase(jobId, workerProfileId, employerProfileId);
+    getOrCreateConversationInSupabase(
+      jobId,
+      workerProfileId,
+      employerProfileId,
+    );
     return conv;
   }
 
@@ -153,32 +172,21 @@ class ChatNotifier extends ChangeNotifier {
 
   void subscribeToConversation(String conversationId) {
     if (!_subscribedConversationIds.add(conversationId)) return;
+    // Route realtime inserts through handleRealtimeMessage so the
+    // sender's own realtime echo is deduplicated by message ID.
     final channel = _supabase.subscribeToMessages(
       conversationId,
-      (message) {
-        _messages = [..._messages, message];
-        _conversations = _conversations.map((c) {
-          if (c.id == message.conversationId) {
-            return c.copyWith(
-              lastMessageText: message.content,
-              lastMessageTime: message.sentAt,
-            );
-          }
-          return c;
-        }).toList();
-        notifyListeners();
-      },
+      handleRealtimeMessage,
     );
     _messageChannels.add(channel);
   }
 
-  void subscribeToAllConversations(List<Conversation> conversations) {
+  void subscribeToAll() {
     for (final ch in _messageChannels) {
       ch.unsubscribe();
     }
     _messageChannels.clear();
-    _subscribedConversationIds.clear();
-    for (final conv in conversations) {
+    for (final conv in _conversations) {
       subscribeToConversation(conv.id);
     }
   }
@@ -198,12 +206,22 @@ class ChatNotifier extends ChangeNotifier {
     notifyListeners();
   }
 
-  void _fireAndForget(String label, Future<dynamic> Function() task) {
-    task().then((_) {}, onError: (e) {
-      debugPrint('$label failed: $e');
-      _lastOperationError ??= '$label failed';
-      notifyListeners();
-    });
+  void _fireAndForget(
+    String type,
+    Map<String, dynamic> payload,
+    Future<dynamic> Function() task,
+  ) {
+    task().then(
+      (_) {},
+      onError: (e) {
+        debugPrint('$type failed: $e');
+        _lastOperationError ??= '$type failed';
+        notifyListeners();
+        // Enqueue operation for retry
+        final syncService = SyncService.instance;
+        syncService.enqueue(type, payload);
+      },
+    );
   }
 
   void unsubscribeAll() {

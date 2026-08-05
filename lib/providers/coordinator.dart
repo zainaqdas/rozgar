@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import '../models/profile.dart';
 import '../models/conversation.dart';
+import '../services/push_service.dart';
 import '../services/supabase_service.dart';
 import '../services/supabase_config.dart';
 import 'auth_provider.dart';
@@ -103,7 +104,7 @@ class Coordinator extends ChangeNotifier {
         chat.setMessages(allMessages);
 
         // Subscribe to realtime
-        chat.subscribeToAllConversations(conversations);
+        chat.subscribeToAll();
         notifications.subscribe(activeProfileId);
       }
 
@@ -115,6 +116,11 @@ class Coordinator extends ChangeNotifier {
 
       // Load all workers
       await workers.loadAllWorkers();
+
+      // Re-register the FCM device token now that a session and profiles
+      // exist. PushService.initialize() runs at cold start before auth may
+      // be restored, so its first registration attempt can be a no-op.
+      await PushService.instance.registerCurrentToken();
 
       _isSupabaseAvailable = true;
     } catch (e) {
@@ -151,6 +157,10 @@ class Coordinator extends ChangeNotifier {
   Future<void> refreshFromSupabase() async {
     final activeProfileId = profile.activeProfileId;
     if (!_isSupabaseAvailable || activeProfileId == null) {
+      if (!_isSupabaseAvailable) {
+        await initialize();
+        return;
+      }
       notifyListeners();
       return;
     }
@@ -161,21 +171,28 @@ class Coordinator extends ChangeNotifier {
         final employerJobs = await _supabase.getEmployerJobs(activeProfileId);
         jobs.setJobs(employerJobs);
         final allJobIds = employerJobs.map((j) => j.id).toList();
-        final allApplications = await _supabase.getApplicationsForJobs(allJobIds);
+        final allApplications = await _supabase.getApplicationsForJobs(
+          allJobIds,
+        );
         jobs.setApplications(allApplications);
       } else {
         final allJobs = await _supabase.getAllJobs();
         jobs.setJobs(allJobs);
-        final workerApps =
-            await _supabase.getApplicationsForWorker(activeProfileId);
+        final workerApps = await _supabase.getApplicationsForWorker(
+          activeProfileId,
+        );
         jobs.setApplications(workerApps);
       }
 
       final conversations = await _supabase.getConversations(activeProfileId);
       chat.setConversations(conversations);
+      chat.subscribeToAll();
 
       final notifs = await _supabase.getNotifications(activeProfileId);
       notifications.setNotifications(notifs);
+      notifications.subscribe(activeProfileId);
+
+      chat.setMessages([]);
 
       await workers.loadAllWorkers();
       notifyListeners();

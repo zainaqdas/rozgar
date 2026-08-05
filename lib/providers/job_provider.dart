@@ -5,6 +5,7 @@ import '../models/conversation.dart';
 import '../models/notification_item.dart';
 import '../models/location_point.dart';
 import '../services/supabase_service.dart';
+import '../services/sync_service.dart';
 import '../providers/worker_provider.dart' show WorkerEntry;
 import '../utils/geo.dart';
 import '../utils/sanitize.dart';
@@ -48,8 +49,10 @@ class JobNotifier extends ChangeNotifier {
 
     // Persist expiry to Supabase fire-and-forget
     for (final id in expiredIds) {
-      _fireAndForget('expireJob:$id',
-          () => _supabase.updateJobStatus(id, status: 'expired'));
+      _fireAndForget('update_job_status', {
+        'job_id': id,
+        'status': 'expired',
+      }, () => _supabase.updateJobStatus(id, status: 'expired'));
     }
   }
 
@@ -91,34 +94,36 @@ class JobNotifier extends ChangeNotifier {
     _jobs.insert(0, job);
     notifyListeners();
 
-    _fireAndForget('createJob', () async {
-      await _supabase.createJob(job);
-      for (final worker in nearbyWorkers) {
-        final dist = calculateDistanceKm(
-          lat1: job.pinLocation.lat,
-          lng1: job.pinLocation.lng,
-          lat2: worker.details.currentLocation.lat,
-          lng2: worker.details.currentLocation.lng,
+    _fireAndForget('create_job', job.toJson(), () => _supabase.createJob(job));
+    for (final worker in nearbyWorkers) {
+      final dist = calculateDistanceKm(
+        lat1: job.pinLocation.lat,
+        lng1: job.pinLocation.lng,
+        lat2: worker.details.currentLocation.lat,
+        lng2: worker.details.currentLocation.lng,
+      );
+      if (dist <= worker.details.notificationRadiusKm) {
+        final notif = NotificationItem(
+          id: 'notif-${_uuid.v4()}',
+          profileId: worker.profile.id,
+          type: NotificationType.newJobRadius,
+          titleEn: 'New Job Available Near You!',
+          titleUr: 'آپ کے قریب نیا کام دستیاب ہے!',
+          bodyEn:
+              'A $safeTitle job is ${dist.toStringAsFixed(1)} km from your location.',
+          bodyUr:
+              '$safeTitle کا کام آپ سے صرف ${dist.toStringAsFixed(1)} کلومیٹر دور ہے۔',
+          isRead: false,
+          createdAt: DateTime.now(),
+          payload: {'jobId': job.id},
         );
-        if (dist <= worker.details.notificationRadiusKm) {
-          final notif = NotificationItem(
-            id: 'notif-${_uuid.v4()}',
-            profileId: worker.profile.id,
-            type: NotificationType.newJobRadius,
-            titleEn: 'New Job Available Near You!',
-            titleUr: 'آپ کے قریب نیا کام دستیاب ہے!',
-            bodyEn:
-                'A $safeTitle job is ${dist.toStringAsFixed(1)} km from your location.',
-            bodyUr:
-                '$safeTitle کا کام آپ سے صرف ${dist.toStringAsFixed(1)} کلومیٹر دور ہے۔',
-            isRead: false,
-            createdAt: DateTime.now(),
-            payload: {'jobId': job.id},
-          );
-          await _supabase.createNotification(notif);
-        }
+        _fireAndForget(
+          'create_notification',
+          notif.toJson(),
+          () => _supabase.createNotification(notif),
+        );
       }
-    });
+    }
 
     return job;
   }
@@ -138,13 +143,16 @@ class JobNotifier extends ChangeNotifier {
       );
       if (dist > radiusKm) return false;
       if (categoryIds.isEmpty) return true;
-      return categoryIds
-          .any((cat) => job.categoryId.contains(cat) || cat.contains(job.categoryId));
+      return categoryIds.any(
+        (cat) => job.categoryId.contains(cat) || cat.contains(job.categoryId),
+      );
     }).toList();
   }
 
   List<Job> getEmployerJobs(String employerProfileId) {
-    return _jobs.where((j) => j.employerProfileId == employerProfileId).toList();
+    return _jobs
+        .where((j) => j.employerProfileId == employerProfileId)
+        .toList();
   }
 
   void expressInterest(
@@ -185,13 +193,19 @@ class JobNotifier extends ChangeNotifier {
         createdAt: DateTime.now(),
         payload: {'jobId': jobId},
       );
-      _fireAndForget('expressInterest:notif',
-          () => _supabase.createNotification(notif));
+      _fireAndForget(
+        'create_notification',
+        notif.toJson(),
+        () => _supabase.createNotification(notif),
+      );
     }
     notifyListeners();
 
     _fireAndForget(
-        'expressInterest:app', () => _supabase.createApplication(app));
+      'express_interest',
+      app.toJson(),
+      () => _supabase.createApplication(app),
+    );
   }
 
   void hireWorker(
@@ -201,8 +215,9 @@ class JobNotifier extends ChangeNotifier {
     void Function(Conversation)? onConversationCreated,
   }) {
     final rejectAppIds = _applications
-        .where((a) =>
-            a.jobId == jobId && a.workerProfileId != hiredWorkerProfileId)
+        .where(
+          (a) => a.jobId == jobId && a.workerProfileId != hiredWorkerProfileId,
+        )
         .map((a) => a.id)
         .toList();
 
@@ -240,23 +255,49 @@ class JobNotifier extends ChangeNotifier {
         createdAt: DateTime.now(),
         payload: {'jobId': jobId},
       );
-      _fireAndForget('hireWorker:notif',
-          () => _supabase.createNotification(notif));
+      _fireAndForget(
+        'create_notification',
+        notif.toJson(),
+        () => _supabase.createNotification(notif),
+      );
     }
     notifyListeners();
 
-    _fireAndForget('hireWorker:update',
-        () => _supabase.updateJobStatus(jobId, status: 'hired', hiredWorkerProfileId: hiredWorkerProfileId));
+    _fireAndForget(
+      'update_job_status',
+      {
+        'job_id': jobId,
+        'status': 'hired',
+        'hired_worker_profile_id': hiredWorkerProfileId,
+      },
+      () => _supabase.updateJobStatus(
+        jobId,
+        status: 'hired',
+        hiredWorkerProfileId: hiredWorkerProfileId,
+      ),
+    );
     if (rejectAppIds.isNotEmpty) {
-      _fireAndForget('hireWorker:reject', () => _supabase.hireAndReject(
-            jobId: jobId,
-            hiredWorkerProfileId: hiredWorkerProfileId,
-            rejectApplicationIds: rejectAppIds,
-          ));
+      _fireAndForget(
+        'hire_and_reject',
+        {
+          'job_id': jobId,
+          'hired_worker_profile_id': hiredWorkerProfileId,
+          'reject_application_ids': rejectAppIds,
+        },
+        () => _supabase.hireAndReject(
+          jobId: jobId,
+          hiredWorkerProfileId: hiredWorkerProfileId,
+          rejectApplicationIds: rejectAppIds,
+        ),
+      );
     }
 
-    _createConversation(jobId, hiredWorkerProfileId, employerProfileId,
-        onConversationCreated);
+    _createConversation(
+      jobId,
+      hiredWorkerProfileId,
+      employerProfileId,
+      onConversationCreated,
+    );
   }
 
   Future<void> _createConversation(
@@ -285,16 +326,29 @@ class JobNotifier extends ChangeNotifier {
       return j;
     }).toList();
     notifyListeners();
-    _fireAndForget('completeJob',
-        () => _supabase.updateJobStatus(jobId, status: 'completed'));
+    _fireAndForget(
+      'update_job_status',
+      {'job_id': jobId, 'status': 'completed'},
+      () => _supabase.updateJobStatus(jobId, status: 'completed'),
+    );
   }
 
-  void _fireAndForget(String label, Future<dynamic> Function() task) {
-    task().then((_) {}, onError: (e) {
-      debugPrint('$label failed: $e');
-      _lastOperationError ??= '$label failed';
-      notifyListeners();
-    });
+  void _fireAndForget(
+    String type,
+    Map<String, dynamic> payload,
+    Future<dynamic> Function() task,
+  ) {
+    task().then(
+      (_) {},
+      onError: (e) {
+        debugPrint('$type failed: $e');
+        _lastOperationError ??= '$type failed';
+        notifyListeners();
+        // Enqueue operation for retry
+        final syncService = SyncService.instance;
+        syncService.enqueue(type, payload);
+      },
+    );
   }
 
   void clear() {

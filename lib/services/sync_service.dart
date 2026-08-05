@@ -6,6 +6,8 @@ import 'package:connectivity_plus/connectivity_plus.dart';
 import '../models/conversation.dart';
 import '../models/job.dart';
 import '../models/application.dart';
+import '../models/notification_item.dart';
+import '../models/review.dart';
 import 'supabase_service.dart';
 import 'package:uuid/uuid.dart';
 
@@ -30,27 +32,28 @@ class QueuedOperation {
   });
 
   QueuedOperation copyWith({int? attempts}) => QueuedOperation(
-        id: id,
-        type: type,
-        payload: payload,
-        createdAt: createdAt,
-        attempts: attempts ?? this.attempts,
-      );
+    id: id,
+    type: type,
+    payload: payload,
+    createdAt: createdAt,
+    attempts: attempts ?? this.attempts,
+  );
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'type': type,
-        'payload': payload,
-        'created_at': createdAt.toIso8601String(),
-        'attempts': attempts,
-      };
+    'id': id,
+    'type': type,
+    'payload': payload,
+    'created_at': createdAt.toIso8601String(),
+    'attempts': attempts,
+  };
 
   factory QueuedOperation.fromJson(Map<String, dynamic> json) =>
       QueuedOperation(
         id: json['id'] as String? ?? '',
         type: json['type'] as String? ?? '',
         payload: (json['payload'] as Map<String, dynamic>?) ?? {},
-        createdAt: DateTime.tryParse(json['created_at'] as String? ?? '') ??
+        createdAt:
+            DateTime.tryParse(json['created_at'] as String? ?? '') ??
             DateTime.now(),
         attempts: (json['attempts'] as num?)?.toInt() ?? 0,
       );
@@ -67,10 +70,24 @@ class SyncService {
   bool _isSyncing = false;
   StreamSubscription<List<ConnectivityResult>>? _connectivitySub;
 
+  /// Operations enqueued before [initialize] completed, held in memory
+  /// and flushed to the Hive box once it is open.
+  final List<QueuedOperation> _pendingBeforeInit = [];
+
   Future<void> initialize() async {
     _box = await Hive.openBox<String>(_boxName);
     _deadLetterBox = await Hive.openBox<String>(_deadLetterBoxName);
     _listenConnectivity();
+    // Flush operations that were buffered before initialization.
+    for (final op in _pendingBeforeInit) {
+      await _box!.put(op.id, jsonEncode(op.toJson()));
+    }
+    if (_pendingBeforeInit.isNotEmpty) {
+      debugPrint(
+        'SyncService: flushed ${_pendingBeforeInit.length} buffered operations',
+      );
+      _pendingBeforeInit.clear();
+    }
     final count = _box!.length;
     if (count > 0) {
       debugPrint('SyncService: $count queued operations pending');
@@ -83,10 +100,8 @@ class SyncService {
   }
 
   void _listenConnectivity() {
-    _connectivitySub =
-        Connectivity().onConnectivityChanged.listen((results) {
-      final hasConnection =
-          results.any((r) => r != ConnectivityResult.none);
+    _connectivitySub = Connectivity().onConnectivityChanged.listen((results) {
+      final hasConnection = results.any((r) => r != ConnectivityResult.none);
       if (hasConnection && _box!.isNotEmpty) {
         debugPrint('SyncService: connectivity restored, syncing...');
         _processQueue();
@@ -101,7 +116,15 @@ class SyncService {
       payload: payload,
       createdAt: DateTime.now(),
     );
-    await _box!.put(op.id, jsonEncode(op.toJson()));
+    final box = _box;
+    if (box == null) {
+      // Not initialized yet (early in app startup, or in unit tests) —
+      // buffer in memory instead of crashing; initialize() flushes these.
+      _pendingBeforeInit.add(op);
+      debugPrint('SyncService: buffered ${op.id} ($type) until initialized');
+      return;
+    }
+    await box.put(op.id, jsonEncode(op.toJson()));
     debugPrint('SyncService: enqueued ${op.id} ($type)');
     _processQueue();
   }
@@ -117,7 +140,8 @@ class SyncService {
 
       try {
         final op = QueuedOperation.fromJson(
-            jsonDecode(raw) as Map<String, dynamic>);
+          jsonDecode(raw) as Map<String, dynamic>,
+        );
         await _processOperation(op);
         await _box!.delete(id);
         debugPrint('SyncService: synced $id (${op.type})');
@@ -142,12 +166,12 @@ class SyncService {
         await _deadLetterBox!.put(id, jsonEncode(json));
         await _box!.delete(id);
         debugPrint(
-            'SyncService: $id moved to dead-letter after $newAttempts attempts');
+          'SyncService: $id moved to dead-letter after $newAttempts attempts',
+        );
       } else {
         json['attempts'] = newAttempts;
         await _box!.put(id, jsonEncode(json));
-        debugPrint(
-            'SyncService: $id attempt $newAttempts/$maxSyncAttempts');
+        debugPrint('SyncService: $id attempt $newAttempts/$maxSyncAttempts');
       }
     } catch (e) {
       debugPrint('SyncService: failed to handle failure for $id: $e');
@@ -158,20 +182,22 @@ class SyncService {
   List<QueuedOperation> getDeadLetterOperations() {
     if (_deadLetterBox == null) return [];
     return _deadLetterBox!.values.map((raw) {
-      return QueuedOperation.fromJson(
-          jsonDecode(raw) as Map<String, dynamic>);
+      return QueuedOperation.fromJson(jsonDecode(raw) as Map<String, dynamic>);
     }).toList();
   }
 
   /// Re-queues a dead-lettered operation for another sync round.
   Future<void> retryDeadLetter(String id) async {
-    final raw = _deadLetterBox!.get(id);
+    final deadLetterBox = _deadLetterBox;
+    final box = _box;
+    if (deadLetterBox == null || box == null) return;
+    final raw = deadLetterBox.get(id);
     if (raw == null) return;
     final json = jsonDecode(raw) as Map<String, dynamic>;
     json['attempts'] = 0;
     json.remove('dead_lettered_at');
-    await _box!.put(id, jsonEncode(json));
-    await _deadLetterBox!.delete(id);
+    await box.put(id, jsonEncode(json));
+    await deadLetterBox.delete(id);
     debugPrint('SyncService: re-queued dead-letter $id');
     _processQueue();
   }
@@ -198,20 +224,61 @@ class SyncService {
             conversationId: op.payload['conversation_id'] as String? ?? '',
             senderProfileId: op.payload['sender_profile_id'] as String? ?? '',
             contentType: ContentType.values.firstWhere(
-              (c) => c.name == (op.payload['content_type'] as String? ?? 'text'),
+              (c) =>
+                  c.name == (op.payload['content_type'] as String? ?? 'text'),
             ),
             content: op.payload['content'] as String? ?? '',
             mediaUrl: op.payload['media_url'] as String?,
-            sentAt: DateTime.tryParse(
-                    op.payload['sent_at'] as String? ?? '') ??
+            sentAt:
+                DateTime.tryParse(op.payload['sent_at'] as String? ?? '') ??
                 DateTime.now(),
           ),
         );
       case 'create_job':
         await supabase.createJob(Job.fromJson(op.payload));
       case 'express_interest':
-        await supabase.createApplication(
-            Application.fromJson(op.payload));
+        await supabase.createApplication(Application.fromJson(op.payload));
+      case 'update_job_status':
+        await supabase.updateJobStatus(
+          op.payload['job_id'] as String,
+          status: op.payload['status'] as String,
+          hiredWorkerProfileId:
+              op.payload['hired_worker_profile_id'] as String?,
+        );
+      case 'hire_and_reject':
+        await supabase.hireAndReject(
+          jobId: op.payload['job_id'] as String,
+          hiredWorkerProfileId: op.payload['hired_worker_profile_id'] as String,
+          rejectApplicationIds: (op.payload['reject_application_ids'] as List)
+              .cast<String>(),
+        );
+      case 'create_notification':
+        await supabase.createNotification(
+          NotificationItem.fromJson(op.payload),
+        );
+      case 'update_conversation_last_message':
+        await supabase.updateConversationLastMessage(
+          op.payload['conversation_id'] as String,
+          lastMessageText: op.payload['last_message_text'] as String,
+          lastMessageTime: DateTime.parse(
+            op.payload['last_message_time'] as String,
+          ),
+        );
+      case 'mark_notifications_read':
+        await supabase.markNotificationsRead(
+          op.payload['profile_id'] as String,
+        );
+      case 'update_worker_details':
+        await supabase.updateWorkerDetails(
+          op.payload['profile_id'] as String,
+          op.payload['updates'] as Map<String, dynamic>,
+        );
+      case 'add_review':
+        await supabase.createReview(Review.fromJson(op.payload));
+      case 'profile_photo':
+        await supabase.updateProfile(op.payload['profile_id'] as String, {
+          'profile_photo_url': op.payload['photo_url'] as String,
+        });
       default:
         throw StateError('Unknown sync operation type: ${op.type}');
     }

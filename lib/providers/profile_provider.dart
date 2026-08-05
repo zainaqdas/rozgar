@@ -2,7 +2,9 @@ import 'package:flutter/foundation.dart';
 import '../models/profile.dart';
 import '../models/location_point.dart';
 import '../models/review.dart';
+import '../services/push_service.dart';
 import '../services/supabase_service.dart';
+import '../services/sync_service.dart';
 import '../utils/sanitize.dart';
 import 'package:uuid/uuid.dart';
 
@@ -110,6 +112,10 @@ class ProfileNotifier extends ChangeNotifier {
     try {
       await _supabase.createProfile(_workerProfile!);
       await _supabase.createWorkerDetails(_workerDetails!);
+      // Profile rows now exist in Supabase, so the FCM token can be
+      // registered against them (PushService init runs pre-auth at cold
+      // start, so its first attempt is a no-op for new signups).
+      await PushService.instance.registerCurrentToken();
     } catch (e) {
       _lastOperationError = 'Failed to save worker profile';
       notifyListeners();
@@ -142,6 +148,9 @@ class ProfileNotifier extends ChangeNotifier {
     notifyListeners();
     try {
       await _supabase.createProfile(_employerProfile!);
+      // See note in completeWorkerOnboarding — register FCM token now
+      // that the profile row exists.
+      await PushService.instance.registerCurrentToken();
     } catch (e) {
       _lastOperationError = 'Failed to save employer profile';
       notifyListeners();
@@ -149,58 +158,90 @@ class ProfileNotifier extends ChangeNotifier {
   }
 
   void updateWorkerBio(String bio) {
-    if (_workerDetails == null) return;
+    updateBio(bio);
+  }
+
+  void updateBio(String bio) {
+    final profile = _workerDetails;
+    if (profile == null) return;
     final safeBio = sanitizeInput(bio);
     _workerDetails = _workerDetails!.copyWith(bio: safeBio);
     notifyListeners();
-    _fireAndForget('updateBio', () => _supabase.updateWorkerDetails(
-      _workerDetails!.profileId,
-      {'bio': safeBio},
-    ));
+    _fireAndForget(
+      'update_worker_details',
+      {
+        'profile_id': profile.profileId,
+        'updates': {'bio': safeBio},
+      },
+      () => _supabase.updateWorkerDetails(profile.profileId, {'bio': safeBio}),
+    );
   }
 
   void toggleWorkerOnline(bool online) {
     if (_workerDetails == null) return;
     _workerDetails = _workerDetails!.copyWith(isOnlineForMap: online);
     notifyListeners();
-    _fireAndForget('toggleOnline', () => _supabase.updateWorkerDetails(
-      _workerDetails!.profileId,
-      {'is_online_for_map': online},
-    ));
+    _fireAndForget(
+      'update_worker_details',
+      {
+        'profile_id': _workerDetails!.profileId,
+        'updates': {'is_online_for_map': online},
+      },
+      () => _supabase.updateWorkerDetails(_workerDetails!.profileId, {
+        'is_online_for_map': online,
+      }),
+    );
   }
 
   void updateProfilePhoto(String photoUrl) {
     final profile = activeProfile;
     if (profile == null) return;
-    final updated = profile.copyWith(profilePhotoUrl: photoUrl);
-    if (profile.profileType == ProfileType.employer) {
-      _employerProfile = updated;
+    if (profile.profileType == ProfileType.worker) {
+      _workerProfile = _workerProfile?.copyWith(profilePhotoUrl: photoUrl);
     } else {
-      _workerProfile = updated;
+      _employerProfile = _employerProfile?.copyWith(profilePhotoUrl: photoUrl);
     }
     notifyListeners();
-    _fireAndForget('updateProfilePhoto', () => _supabase.updateProfile(
-      profile.id,
-      {'profile_photo_url': photoUrl},
-    ));
+    _fireAndForget(
+      'profile_photo',
+      {'profile_id': profile.id, 'photo_url': photoUrl},
+      () =>
+          _supabase.updateProfile(profile.id, {'profile_photo_url': photoUrl}),
+    );
   }
 
   void updateWorkerRadius(double radiusKm) {
     if (_workerDetails == null) return;
     _workerDetails = _workerDetails!.copyWith(notificationRadiusKm: radiusKm);
     notifyListeners();
-    _fireAndForget('updateRadius', () => _supabase.updateWorkerDetails(
-      _workerDetails!.profileId,
-      {'notification_radius_km': radiusKm},
-    ));
+    _fireAndForget(
+      'update_worker_details',
+      {
+        'profile_id': _workerDetails!.profileId,
+        'updates': {'notification_radius_km': radiusKm},
+      },
+      () => _supabase.updateWorkerDetails(_workerDetails!.profileId, {
+        'notification_radius_km': radiusKm,
+      }),
+    );
   }
 
-  void _fireAndForget(String label, Future<dynamic> Function() task) {
-    task().then((_) {}, onError: (e) {
-      debugPrint('$label failed: $e');
-      _lastOperationError ??= '$label failed';
-      notifyListeners();
-    });
+  void _fireAndForget(
+    String type,
+    Map<String, dynamic> payload,
+    Future<dynamic> Function() task,
+  ) {
+    task().then(
+      (_) {},
+      onError: (e) {
+        debugPrint('$type failed: $e');
+        _lastOperationError ??= '$type failed';
+        notifyListeners();
+        // Enqueue operation for retry
+        final syncService = SyncService.instance;
+        syncService.enqueue(type, payload);
+      },
+    );
   }
 
   void setReviews(List<Review> reviews) {
@@ -227,7 +268,11 @@ class ProfileNotifier extends ChangeNotifier {
     );
     _reviews.insert(0, review);
     notifyListeners();
-    _fireAndForget('addReview', () => _supabase.createReview(review));
+    _fireAndForget(
+      'add_review',
+      review.toJson(),
+      () => _supabase.createReview(review),
+    );
   }
 
   void clear() {
